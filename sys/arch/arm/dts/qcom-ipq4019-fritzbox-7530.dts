@@ -1,0 +1,249 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+/*
+ * AVM FRITZ!Box 7530 (Qualcomm IPQ4019) for NetBSD.
+ *
+ * The SoC comes from the IPQ4019 description shipped with NetBSD
+ * (sys/external/gpl2/dts/dist/arch/arm/boot/dts/qcom-ipq4019.dtsi, from
+ * Linux).  This file only adds what that one lacks or leaves disabled:
+ * the board (memory, console, enabled devices) and the ESS switch/EDMA
+ * nodes, which mainline Linux never got (they come from OpenWrt).
+ *
+ * The MAC address is not here: U-Boot fills in "local-mac-address" of the
+ * node the "ethernet0" alias points to, from its ethaddr variable.
+ */
+
+/dts-v1/;
+
+#include "qcom-ipq4019.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+
+/ {
+	model = "AVM FRITZ!Box 7530";
+	compatible = "avm,fritzbox-7530", "qcom,ipq4019";
+
+	aliases {
+		serial0 = &blsp1_uart1;
+		ethernet0 = &edma;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+		bootargs = "-v";
+	};
+
+	memory {
+		device_type = "memory";
+		reg = <0x80000000 0x10000000>;		/* 256 MB */
+	};
+
+	/*
+	 * Buttons (active low).  NetBSD's gpiokeys polls them and reports
+	 * them to powerd as hotkeys: /etc/powerd/scripts/hotkey_button gets
+	 * "wlan", "wps" or "dect" with "pressed"/"released".
+	 */
+	keys {
+		compatible = "gpio-keys";
+
+		wlan {
+			label = "wlan";
+			gpios = <&tlmm 42 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_RFKILL>;
+		};
+
+		wps {
+			label = "wps";
+			gpios = <&tlmm 41 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_WPS_BUTTON>;
+		};
+
+		dect {
+			label = "dect";
+			gpios = <&tlmm 43 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_PHONE>;
+		};
+	};
+
+	/*
+	 * LEDs (active low), driven by NetBSD's gpioleds: sysctl hw.led.<name>.
+	 * Without "default-state" NetBSD keeps the state at attach, which is
+	 * "on" here (the output latch reads 0 and the LEDs are active low),
+	 * so every LED gets one.
+	 */
+	leds {
+		compatible = "gpio-leds";
+
+		info_red {
+			label = "info_red";
+			gpios = <&tlmm 32 GPIO_ACTIVE_LOW>;
+			default-state = "off";
+		};
+
+		info_green {
+			label = "info_green";
+			gpios = <&tlmm 33 GPIO_ACTIVE_LOW>;
+			default-state = "off";
+		};
+
+		wlan {
+			label = "wlan";
+			gpios = <&tlmm 34 GPIO_ACTIVE_LOW>;
+			default-state = "off";
+		};
+
+		fon {
+			label = "fon";
+			gpios = <&tlmm 35 GPIO_ACTIVE_LOW>;
+			default-state = "off";
+		};
+
+		power {
+			label = "power";
+			gpios = <&tlmm 39 GPIO_ACTIVE_LOW>;
+			default-state = "on";
+		};
+
+		wps {
+			label = "wps";
+			gpios = <&tlmm 45 GPIO_ACTIVE_LOW>;
+			default-state = "off";
+		};
+	};
+
+	soc {
+		/*
+		 * ESS switch (QCA8337-like core, 6 ports; port 0 is the CPU).
+		 * The EDMA driver resets the ESS and restores the switch
+		 * registers U-Boot programmed; it only needs the base address.
+		 */
+		ess_switch: switch@c000000 {
+			compatible = "qca,ipq4019-qca8337n";
+			reg = <0xc000000 0x80000>, <0x98000 0x800>;
+			reg-names = "base", "psgmii_phy";
+			/*
+			 * The ESS reset and clock cover the switch and the
+			 * EDMA engine; the switch driver (qcom_ess) does the
+			 * reset, before qcomedma attaches.  OpenWrt also lists
+			 * the PSGMII reset (GCC reset 77, ESS_PSGMII_ARES),
+			 * which NetBSD's older copy of
+			 * dt-bindings/clock/qcom,gcc-ipq4019.h lacks; nothing
+			 * here uses it.
+			 */
+			resets = <&gcc ESS_RESET>;
+			reset-names = "ess";
+			clocks = <&gcc GCC_ESS_CLK>;
+			clock-names = "ess";
+			status = "okay";
+		};
+
+		/*
+		 * ESS EDMA: the DMA engine between memory and switch port 0.
+		 * 16 TX queue interrupts, then 16 RX queue interrupts (the
+		 * driver uses RX queues 0/2/4/6, i.e. entries 16/18/20/22).
+		 */
+		edma: ethernet@c080000 {
+			compatible = "qcom,ipq4019-ess-edma";
+			reg = <0xc080000 0x8000>;
+			interrupts =
+			    <GIC_SPI  65 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI  66 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI  67 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI  68 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI  69 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI  70 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI  71 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI  72 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI  73 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI  74 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI  75 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI  76 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI  77 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI  78 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI  79 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI  80 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI 240 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI 241 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI 242 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI 243 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI 244 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI 245 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI 246 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI 247 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI 248 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI 249 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI 250 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI 251 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI 252 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI 253 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI 254 IRQ_TYPE_EDGE_RISING>,
+			    <GIC_SPI 255 IRQ_TYPE_EDGE_RISING>;
+			phy-mode = "internal";
+			status = "okay";
+
+			fixed-link {
+				speed = <1000>;
+				full-duplex;
+				pause;
+			};
+		};
+	};
+};
+
+&blsp1_uart1 {
+	status = "okay";
+};
+
+&watchdog {
+	status = "okay";
+};
+
+&prng {
+	status = "okay";
+};
+
+/*
+ * NAND controller.  Its BAM DMA engine (qpic_bam) has no driver; qcom_qpic
+ * resets the block and drives it with register writes.
+ */
+&nand {
+	resets = <&gcc GCC_QPIC_BCR>;
+	reset-names = "qpic";
+	status = "okay";
+
+	nand@0 {
+		/* as U-Boot's mtdparts: only the UBI partition is used */
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			ubi@1300000 {
+				label = "ubi";
+				reg = <0x1300000 0x6d00000>;
+			};
+		};
+	};
+};
+
+&tlmm {
+	/* the USB 3 port's VBUS switch: on, as OpenWrt does */
+	usb-power {
+		line-name = "enable USB3 power";
+		gpio-hog;
+		gpios = <49 GPIO_ACTIVE_HIGH>;
+		output-high;
+	};
+};
+
+/* USB 3 port */
+&usb3_ss_phy {
+	status = "okay";
+};
+
+&usb3_hs_phy {
+	status = "okay";
+};
+
+&usb3 {
+	status = "okay";
+};

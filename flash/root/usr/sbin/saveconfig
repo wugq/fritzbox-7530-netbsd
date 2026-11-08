@@ -1,0 +1,65 @@
+#!/bin/sh
+#
+# saveconfig -- keep the flash edition's settings across reboots.
+#
+# The root file system is a memory disk: changes are lost at reboot.  This
+# saves the files listed in /etc/saveconfig.list into the NAND (the UBI
+# volume "config", as a tar archive); /etc/rc restores them at boot.
+#
+#   saveconfig        save to the NAND
+#   saveconfig -u     save to /fritz/ on a USB stick instead
+#   saveconfig -n     only show what would be saved
+#
+export PATH=/sbin:/bin:/usr/sbin:/usr/bin
+. /etc/rc.settings
+mode=nand
+case "$1" in
+-u)	mode=usb ;;
+-n)	mode=dry ;;
+"")	;;
+*)	echo "usage: saveconfig [-u | -n]" >&2; exit 2 ;;
+esac
+
+# the files that exist, relative to / (tar members without a leading /)
+files=$(grep -v '^#' /etc/saveconfig.list | grep -v '^$' |
+    while read -r f; do [ -e "$f" ] && echo "${f#/}"; done)
+
+case $mode in
+dry)
+	for f in $files; do echo "would save /$f"; done
+	;;
+nand)
+	if ! config_vol; then
+		echo "saveconfig: no UBI volume \"config\" (try -u)" >&2
+		exit 1
+	fi
+	tar=/tmp/saveconfig.tar
+	(cd / && pax -w -x ustar $files) > $tar || exit 1
+	size=$(wc -c < $tar | tr -d " ")
+	if [ "$size" -gt 253952 ]; then
+		echo "saveconfig: $size bytes, more than the volume holds" >&2
+		rm -f $tar; exit 1
+	fi
+	# whole LEBs (124 KB) at a time: one flash update per LEB
+	if ! dd if=$tar of=$CONFIG_DEV bs=126976 conv=sync 2>/dev/null; then
+		echo "saveconfig: writing $CONFIG_DEV failed (dmesg)" >&2
+		rm -f $tar; exit 1
+	fi
+	rm -f $tar
+	for f in $files; do echo "saved /$f"; done
+	echo "saveconfig: done ($CONFIG_DEV, $size bytes)"
+	;;
+usb)
+	if ! mount_usb rw; then
+		echo "saveconfig: no USB stick (sd0a/sd0e/sd0i) found" >&2
+		exit 1
+	fi
+	for f in $files; do
+		mkdir -p "/mnt/fritz/${f%/*}"
+		cp -p "/$f" "/mnt/fritz/$f" && echo "saved /$f"
+	done
+	sync
+	umount /mnt
+	echo "saveconfig: done ($USB_DEV:/fritz)"
+	;;
+esac

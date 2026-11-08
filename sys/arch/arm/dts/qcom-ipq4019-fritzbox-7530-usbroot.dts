@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+/*
+ * Same as qcom-ipq4019-fritzbox-7530.dts, with the root file system on the
+ * USB stick (the official NetBSD armv7.img written to it).
+ */
+
+#include "qcom-ipq4019-fritzbox-7530.dts"
+
+/ {
+	chosen {
+		bootargs = "root=sd0a -v";
+	};
+};

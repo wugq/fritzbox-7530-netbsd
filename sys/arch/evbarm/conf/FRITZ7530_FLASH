@@ -1,0 +1,16 @@
+#	$NetBSD$
+#
+#	FRITZ7530_FLASH -- the FRITZ7530 kernel with its root file system
+#	inside: the flash edition (docs/flash-edition.md).
+#
+#	The kernel reserves an array for a memory disk (md_root_image);
+#	tools/mkflash.sh fills it with the root image using mdsetimage(8)
+#	and gzips the whole kernel, which U-Boot unpacks at boot.  As the
+#	NetBSD install kernels do (arch/evbarm/conf/INSTALL).
+#
+
+include	"arch/evbarm/conf/FRITZ7530"
+
+no options 	MEMORY_DISK_DYNAMIC	# std.generic: md image from the boot loader
+options 	MEMORY_DISK_IS_ROOT	# the root is the memory disk, always
+options 	MEMORY_DISK_ROOT_SIZE=81920	# 40 MB in 512-byte blocks

@@ -1,0 +1,72 @@
+#	$NetBSD$
+#
+# Configuration info for Qualcomm IPQ40xx SoCs (IPQ4018/IPQ4019),
+# as found in the AVM FRITZ!Box 7530.
+#
+# Included from arch/evbarm/conf/files.generic; GENERIC enables
+# "options SOC_IPQ40XX" and attaches the devices below.
+#
+
+# SoC selection: the FDT platform (devmap, SMP bring-up) is built only for it
+defflag	opt_soc.h			SOC_IPQ40XX
+
+# Platform: early device mappings and secondary CPU start (qcom,kpss-acc-v2)
+file	arch/arm/qcom/ipq4019_platform.c	soc_ipq40xx
+
+# GCC: clock gates and resets for the other blocks
+device	qcomgcc
+attach	qcomgcc at fdt with qcom_gcc
+file	arch/arm/qcom/qcom_gcc.c		qcom_gcc
+
+# TLMM: GPIOs (buttons, LEDs, USB VBUS gpio-hog) and a gpiobus
+device	qcomtlmm: gpiobus
+attach	qcomtlmm at fdt with qcom_tlmm
+file	arch/arm/qcom/qcom_tlmm.c		qcom_tlmm
+
+# UARTDM serial console
+device	qcomuart: tty
+attach	qcomuart at fdt with qcom_uart
+file	arch/arm/qcom/qcom_uart.c		qcom_uart
+
+# PS_HOLD: board reset
+device	qcompshold
+attach	qcompshold at fdt with qcom_pshold
+file	arch/arm/qcom/qcom_pshold.c		qcom_pshold
+
+# KPSS watchdog
+device	qcomwdt
+attach	qcomwdt at fdt with qcom_wdt
+file	arch/arm/qcom/qcom_wdt.c		qcom_wdt
+
+# PRNG: hardware random number generator, feeds the entropy pool
+device	qcomrng
+attach	qcomrng at fdt with qcom_rng
+file	arch/arm/qcom/qcom_rng.c		qcom_rng
+
+# USB 2/3 PHYs: reset sequences through the GCC
+device	qcomusbphy
+attach	qcomusbphy at fdt with qcom_usbphy
+file	arch/arm/qcom/qcom_usbphy.c		qcom_usbphy
+
+# DWC3 USB glue: attaches the "snps,dwc3" controller below it
+# (config(1) device names can't end in a digit: "qcomdwc", not "qcomdwc3")
+device	qcomdwc: fdt
+attach	qcomdwc at fdt with qcom_dwcglue
+file	arch/arm/qcom/qcom_dwc3.c		qcom_dwcglue
+
+# QPIC NAND controller
+device	qcomqpic
+attach	qcomqpic at fdt with qcom_qpic
+file	arch/arm/qcom/qcom_qpic.c		qcom_qpic
+file	arch/arm/qcom/qpic_nand.c		qcom_qpic
+file	dev/ubi/ubi_lite.c			qcom_qpic
+
+# ESS switch: ESS reset, switch set-up, port link polling
+device	qcomess
+attach	qcomess at fdt with qcom_ess
+file	arch/arm/qcom/ipq4019_ess.c		qcom_ess
+
+# ESS EDMA Ethernet (the DMA engine between the CPU and the ESS switch)
+device	qcomedma: ether, ifnet, arp
+attach	qcomedma at fdt with ipq4019_edma
+file	arch/arm/qcom/ipq4019_edma.c		ipq4019_edma

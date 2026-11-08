@@ -1,0 +1,23 @@
+# firmware, flash backups (may hold device keys / WiFi passwords!), TFTP staging
+prepare/firmware/*
+!prepare/firmware/sha256sums
+prepare/backup/
+prepare/tftp/
+
+# NetBSD source, toolchain and build products (tools/build.sh creates them)
+/src/
+/obj/
+/tooldir/
+/dl/
+/tftp/
+
+# logs from the test benches
+*.log
+
+# reference sources (FreeBSD, Linux) for reading, not part of the repo
+/ref/
+
+# local notes, Chinese documents, journals, test reports, logs (not published)
+/private/
+# working instructions for the AI assistant (local)
+/CLAUDE.md

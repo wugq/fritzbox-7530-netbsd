@@ -1,0 +1,157 @@
+#	$NetBSD$
+#
+#	FRITZ7530 -- a small kernel for the AVM FRITZ!Box 7530 (Qualcomm
+#	IPQ4019): only what this board has, plus what a router needs.
+#
+#	GENERIC runs on every armv7 board NetBSD knows; this one leaves out
+#	the other SoCs, displays, sound, PCI, SD/MMC, most USB devices, RAID
+#	and disk encryption, the NFS server, DTrace and the compat layers.
+#	Lines taken from GENERIC / GENERIC.common keep their comments; to get
+#	something back, copy its line from there.
+#
+#	Build: KERNEL=FRITZ7530 tools/build.sh
+#
+
+include	"arch/evbarm/conf/std.generic"	# FDT, MODULAR, md(4) root, ...
+include "arch/evbarm/conf/files.fritz7530"	# files.generic, Qualcomm only
+
+options 	CPU_CORTEX
+options 	SOC_IPQ40XX
+options 	MULTIPROCESSOR
+
+maxusers	32
+
+# the root file system comes from the boot arguments (root=sd0a) or md(4)
+config		netbsd		root on ? type ?
+
+#
+# System
+#
+options 	RTC_OFFSET=0	# hardware clock is this many mins. west of GMT
+options 	NTP		# NTP phase/frequency locked loop
+options 	HEARTBEAT	# panic if a CPU stops getting clock interrupts
+options 	HEARTBEAT_MAX_PERIOD_DEFAULT=15
+options 	MSGBUFSIZE=32768
+options 	KTRACE		# system call tracing, a la ktrace(1)
+options 	USERCONF	# userconf(4) support
+options 	SYSCTL_INCLUDE_DESCR	# Include sysctl descriptions in kernel
+options 	SYSVMSG		# System V-like message queues
+options 	SYSVSEM		# System V-like semaphores
+options 	SYSVSHM		# System V-like memory sharing
+
+# Security (as GENERIC.common)
+options 	PAX_SEGVGUARD=0		# PaX Segmentation fault guard
+options 	PAX_MPROTECT=1		# PaX mprotect(2) restrictions
+options 	PAX_ASLR=1		# PaX Address Space Layout Randomization
+
+# Debugging: keep ddb and the symbol table, panics here are worth a trace
+options 	DDB		# in-kernel debugger
+options 	DDB_ONPANIC=1
+options 	DDB_HISTORY_SIZE=100	# Enable history editing in DDB
+makeoptions 	DEBUG="-g"	# compile full symbol table (netbsd.gdb)
+makeoptions 	COPY_SYMTAB=1
+#options 	DIAGNOSTIC	# internal consistency checks
+#options 	LOCKDEBUG
+
+# Early console (debugging the first steps of boot)
+#options 	EARLYCONS=qcom, CONSADDR=0x078af000
+
+#
+# File systems: the root on a USB stick, FAT sticks, RAM file systems
+#
+file-system 	FFS		# UFS
+file-system 	MSDOSFS		# MS-DOS file system
+file-system 	TMPFS		# Efficient memory file-system
+file-system 	MFS		# memory file system
+file-system 	KERNFS		# /kern
+file-system 	PROCFS		# /proc
+file-system 	PTYFS		# /dev/pts/N support
+file-system 	NULLFS		# loopback file system
+file-system 	NFS		# Network File System client
+options 	FFS_EI		# FFS Endian Independent support
+options 	UFS_DIRHASH	# UFS Large Directory Hashing
+options 	WAPBL		# File system journaling support
+options 	DISKLABEL_EI	# disklabel Endian Independent support
+options 	DKWEDGE_AUTODISCOVER	# Automatically add dk(4) instances
+options 	DKWEDGE_METHOD_GPT	# Supports GPT partitions as wedges
+options 	BUFQ_PRIOCSCAN
+#options 	QUOTA, QUOTA2, UFS_ACL, UFS_EXTATTR, NFSSERVER, LFS ...
+
+#
+# Networking: a router
+#
+options 	INET		# IP + ICMP + TCP + UDP
+options 	INET6		# IPV6
+options 	GATEWAY		# packet forwarding, ipflow fast path
+options 	NET_MPSAFE	# MP-safe network stack (qcomedma uses it)
+options 	BPFJIT
+#options 	IPSEC		# IP security (+ pseudo-devices crypto, swcrypto)
+
+pseudo-device	bpfilter		# Berkeley packet filter
+pseudo-device	loop			# network loopback
+pseudo-device	npf			# NPF packet filter
+pseudo-device	bridge			# simple inter-network bridging
+pseudo-device	vether			# Virtual Ethernet for bridge
+pseudo-device	vlan			# IEEE 802.1q encapsulation (the WAN port)
+pseudo-device	pppoe			# PPP over Ethernet (RFC 2516)
+pseudo-device	tun			# network tunneling over tty
+pseudo-device	tap			# virtual Ethernet
+pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC 1933)
+pseudo-device	gre			# generic L3 over IP tunnel
+pseudo-device	carp			# Common Address Redundancy Protocol
+
+#
+# Other pseudo-devices
+#
+pseudo-device	pty			# pseudo-terminals
+pseudo-device	clockctl		# user control of clock subsystem
+pseudo-device	ksyms			# /dev/ksyms
+pseudo-device	drvctl			# driver control
+pseudo-device	swwdog			# software watchdog timer -- swwdog(4)
+pseudo-device	openfirm		# /dev/openfirm (dump the device tree)
+
+#
+# Devices: what attaches on the 7530 (see the boot log)
+#
+armfdt0		at root
+simplebus*	at fdt? pass 0
+cpus*		at fdt? pass 0
+cpu*		at fdt? pass 0
+cpufreqdt* 	at cpu?
+fclock* 	at fdt? pass 1		# fixed clocks (the 48 MHz crystal)
+
+qcomgcc* 	at fdt? pass 1		# Qualcomm IPQ40xx GCC (clocks, resets)
+gic* 		at fdt? pass 1		# ARM GIC
+armgic0 	at gic?
+gtmr* 		at fdt? pass 1		# ARM Generic Timer
+armgtmr0 	at gtmr?
+armpmu* 	at fdt?			# performance counters
+pseudo-device	tprof			# tprof(8): sample where the CPUs spend time
+qcomwdt* 	at fdt? pass 1		# Qualcomm KPSS watchdog
+qcompshold*	at fdt? pass 1		# Qualcomm PS_HOLD reset
+qcomtlmm* 	at fdt? pass 2		# Qualcomm IPQ40xx TLMM (GPIO)
+gpio* 		at gpiobus?
+gpiokeys* 	at fdt?			# the WLAN/DECT/WPS buttons
+wskbd*		at wskbddev? console ?	# gpiokeys reports keys through it
+pseudo-device	wsmux
+gpioleds* 	at fdt?			# the LEDs
+qcomrng* 	at fdt?			# Qualcomm PRNG
+qcomqpic* 	at fdt?			# Qualcomm QPIC NAND controller
+
+qcomuart* 	at fdt?	pass 4		# Qualcomm UARTDM (the console)
+
+qcomess* 	at fdt? pass 4		# Qualcomm IPQ40xx ESS switch
+qcomedma*	at fdt?			# Qualcomm IPQ40xx ESS EDMA (Ethernet)
+
+# USB 3 port: DWC3 controller, USB mass storage only
+qcomusbphy* 	at fdt? pass 9		# Qualcomm IPQ40xx USB PHY
+qcomdwc* 	at fdt?			# Qualcomm DWC3 glue
+xhci* 		at fdt?			# XHCI
+usb* 		at usbus?
+uhub* 		at usb?
+uhub* 		at uhub? port ?
+umass* 		at uhub? port ? configuration ? interface ?
+scsibus* 	at scsi?
+sd* 		at scsibus? target ? lun ?	# SCSI disks
+# more USB devices: copy their lines from dev/usb/usbdevices.config,
+# e.g. a USB Ethernet adapter (axe, ure, cdce) or a serial adapter (uftdi)

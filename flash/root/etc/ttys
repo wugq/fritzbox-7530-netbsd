@@ -1,0 +1,2 @@
+# the serial console (constty is the console the kernel chose)
+constty	"/usr/libexec/getty default"	vt100	on secure

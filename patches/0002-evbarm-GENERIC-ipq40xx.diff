@@ -1,0 +1,131 @@
+GENERIC (armv7): enable the IPQ40xx SoC and attach its devices, each in
+the section where its kind lives; a commented EARLYCONS line like the other
+SoCs; NET_MPSAFE and GATEWAY for routing performance.
+
+diff --git a/sys/arch/evbarm/conf/GENERIC b/sys/arch/evbarm/conf/GENERIC
+index df7ac28d6..61275ae31 100644
+--- a/sys/arch/evbarm/conf/GENERIC
++++ b/sys/arch/evbarm/conf/GENERIC
+@@ -10,6 +10,10 @@ include	"arch/evbarm/conf/GENERIC.common"
+ 
+ options 	CPU_CORTEX
+ 
++# Routing: TCP/IP without the big kernel lock, IP forwarding fast path
++options 	NET_MPSAFE
++options 	GATEWAY
++
+ options 	SOC_AM33XX
+ options 	SOC_BCM2836
+ options 	SOC_EXYNOS5422
+@@ -18,6 +22,7 @@ options 	SOC_IMX6Q
+ options 	SOC_IMX6QDL
+ options 	SOC_IMX6SX
+ options 	SOC_IMX7D
++options 	SOC_IPQ40XX
+ options 	SOC_MESON8B
+ options 	SOC_OMAP3
+ options 	SOC_RK3288
+@@ -76,6 +81,10 @@ options 	MSGBUFSIZE=32768
+ #options 	EARLYCONS=meson, CONSADDR=0xc81004c0
+ 
+ #options 	EARLYCONS=omap3, CONSADDR=0x49020000
++
++# FRITZ!Box 7530 (IPQ4019)
++#options 	EARLYCONS=qcom, CONSADDR=0x078af000
++
+ #options 	EARLYCONS=rk3328, CONSADDR=0xff130000
+ #options 	EARLYCONS=sunxi, CONSADDR=0x01c28000
+ 
+@@ -148,22 +157,23 @@ meson8bclkc* 	at fdt? pass 2		# Amlogic Meson8b clock controller
+ mesonresets* 	at fdt? pass 2		# Amlogic Meson misc. clock resets
+ omap3cm* 	at fdt? pass 1		# TI OMAP3 CM
+ omap3prm* 	at fdt? pass 1		# TI OMAP3 PRM
++qcomgcc* 	at fdt? pass 1		# Qualcomm IPQ40xx GCC
+ rkcru*		at fdt? pass 2		# Rockchip RK3288 CRU
+ sun4ia10ccu* 	at fdt? pass 2		# Allwinner A10/A20 CCU
+ sun5ia13ccu* 	at fdt? pass 2		# Allwinner A13 CCU
+ sun6ia31ccu* 	at fdt? pass 2		# Allwinner A31 CCU
+ sun8ia83tccu* 	at fdt? pass 2		# Allwinner A83T CCU
++sun8iapbclk* 	at fdt? pass 2		# Allwinner A23 APB0
+ sun8ih3ccu* 	at fdt? pass 2		# Allwinner H3 CCU
+ sun8ih3rccu* 	at fdt? pass 2		# Allwinner H3 CCU (PRCM)
+ sun8iv3sccu* 	at fdt? pass 2		# Allwinner V3s CCU
+ sun9ia80ccu* 	at fdt? pass 2		# Allwinner A80 CCU
+-sunxiresets* 	at fdt? pass 1		# Allwinner Misc. clock resets
+-sunxigates* 	at fdt? pass 1		# Allwinner Misc. clock gates
+-sunxigmacclk* 	at fdt? pass 2		# Allwinner GMAC MII/RGMII clock mux
+-sun8iapbclk* 	at fdt? pass 2		# Allwinner A23 APB0
+ sun9icpusclk* 	at fdt? pass 2		# Allwinner A80 CPUS
+ sun9immcclk* 	at fdt? pass 2		# Allwinner A80 SD/MMC-COMM
+ sun9iusbclk* 	at fdt? pass 2		# Allwinner A80 USB HCI
++sunxigates* 	at fdt? pass 1		# Allwinner Misc. clock gates
++sunxigmacclk* 	at fdt? pass 2		# Allwinner GMAC MII/RGMII clock mux
++sunxiresets* 	at fdt? pass 1		# Allwinner Misc. clock resets
+ tegra124car* 	at fdt? pass 3		# NVIDIA Tegra CAR (T124)
+ tegra210car* 	at fdt? pass 3		# NVIDIA Tegra CAR (T210)
+ tidivclk* 	at fdt? pass 1		# TI divider clock
+@@ -215,6 +225,7 @@ bcmpmwdog* 	at fdt?			# Broadcom BCM283x watchdog
+ dwcwdt* 	at fdt?			# DesignWare watchdog
+ imxwdog*	at fdt?			# NXP i.MX watchdog
+ mesonwdt* 	at fdt?			# Amlogic Meson watchdog
++qcomwdt* 	at fdt? pass 1		# Qualcomm KPSS watchdog
+ sunxiwdt* 	at fdt?			# Allwinner watchdog
+ tiwdt* 		at fdt?			# TI OMAP watchdog
+ 
+@@ -256,6 +267,7 @@ tegrafuse* 	at fdt? pass 4		# NVIDIA Tegra FUSE
+ 
+ # Power management controller
+ imxgpc*		at fdt? pass 2
++qcompshold*	at fdt? pass 1		# Qualcomm PS_HOLD reset
+ tegrapmc* 	at fdt? pass 4		# NVIDIA Tegra PMC
+ 
+ # Performance monitors
+@@ -272,6 +284,7 @@ exyopctl* 	at fdt? pass 2		# Samsung Exynos GPIO
+ imxgpio* 	at fdt? pass 3		# i.MX GPIO
+ mesonpinctrl* 	at fdt? pass 2		# Amlogic Meson GPIO
+ plgpio* 	at fdt?			# ARM PrimeCell GPIO
++qcomtlmm* 	at fdt? pass 2		# Qualcomm IPQ40xx TLMM
+ sunxigpio* 	at fdt? pass 3		# Allwinner GPIO
+ rkgpio*		at rkiomux?		# Rockchip GPIO
+ tegragpio* 	at fdt? pass 2		# NVIDIA Tegra GPIO
+@@ -316,6 +329,8 @@ cemac* 		at fdt?			# Cadence EMAC/GEM ethernet controller
+ cpsw*		at fdt?			# TI CPSW 3-port Ethernet Switch
+ emac* 		at fdt?			# Allwinner Fast/Gigabit Ethernet (EMAC)
+ enet*		at fdt?			# i.MX FEC
++qcomess* 	at fdt? pass 4		# Qualcomm IPQ40xx ESS switch
++qcomedma*	at fdt?			# Qualcomm IPQ40xx ESS EDMA
+ smsh* 		at fdt?			# SMSC LAN9118
+ 
+ # PCI Ethernet
+@@ -362,6 +377,7 @@ imxuart* 	at fdt?	pass 4		# i.MX UART
+ options 	IMXUARTCONSOLE
+ mesonuart* 	at fdt?	pass 4		# Amlogic Meson UART
+ plcom* 		at fdt?	pass 4		# ARM PL011 UART
++qcomuart* 	at fdt?	pass 4		# Qualcomm UARTDM
+ zynquart* 	at fdt?	pass 4		# Cadence UART
+ 
+ # I2C controllers
+@@ -426,6 +442,7 @@ m25p* 		at spi? slave ?
+ # Random number generators
+ bcmrng* 	at fdt?			# Broadcom BCM283x RNG
+ mesonrng* 	at fdt?			# Amlogic Meson RNG
++qcomrng* 	at fdt?			# Qualcomm PRNG
+ tirng* 		at fdt?			# TI RNG
+ rkv1crypto*	at fdt?			# Rockchip Crypto v1
+ sun8icrypto* 	at fdt?			# Allwinner Crypto Engine
+@@ -576,6 +593,7 @@ exusbphy* 	at fdt? pass 9		# Samsung Exynos USB2 PHY
+ exusbdrdphy* 	at fdt? pass 9		# Samsung Exynos USB3 DRD PHY
+ imxusbphy* 	at fdt? pass 9		# i.MX USB PHY
+ mesonusbphy* 	at fdt? pass 9		# Amlogic Meson USB2 PHY
++qcomusbphy* 	at fdt? pass 9		# Qualcomm IPQ40xx USB PHY
+ rk3288usb*	at fdt? pass 9		# Rockchip USB PHY
+ rk3288usbphy*	at rk3288usb?
+ sun9iusbphy* 	at fdt? pass 9		# Allwinner A80 USB PHY
+@@ -585,6 +603,7 @@ tegrausbphy* 	at fdt?			# NVIDIA Tegra USB PHY
+ usbnopphy* 	at fdt? pass 9		# Generic USB PHY
+ 
+ imxusbc* 	at fdt?
++qcomdwc* 	at fdt?			# Qualcomm DWC3 glue
+ tiotg* 		at fdt?			# TI dual port OTG
+ tiusb* 		at fdt? pass 9		# TI HS USB host
+ tiusbtll* 	at fdt? pass 8		# TI HS USB host TLL

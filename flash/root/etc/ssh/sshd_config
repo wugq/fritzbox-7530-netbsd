@@ -1,0 +1,8 @@
+# sshd for the flash edition: root may log in with a key only
+PermitRootLogin prohibit-password
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+AuthorizedKeysFile .ssh/authorized_keys
+Subsystem sftp none
+# commands run over ssh (no login shell, no .profile) need /sbin too
+SetEnv PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/pkg/bin

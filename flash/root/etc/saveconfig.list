@@ -1,0 +1,22 @@
+# Files saveconfig(8) keeps (in the NAND, or on a USB stick), one per line.
+/etc/router.conf
+/etc/npf.conf
+/etc/dhcpd.conf
+/etc/resolv.conf
+/etc/hosts
+/etc/master.passwd
+/etc/passwd
+/etc/pwd.db
+/etc/spwd.db
+/etc/group
+/root/.ssh/authorized_keys
+/etc/ssh/ssh_host_ecdsa_key
+/etc/ssh/ssh_host_ecdsa_key.pub
+/etc/ssh/ssh_host_ed25519_key
+/etc/ssh/ssh_host_ed25519_key.pub
+/etc/ssh/ssh_host_rsa_key
+/etc/ssh/ssh_host_rsa_key.pub
+/etc/ssh/ssh_host_mldsa44_ed25519_key
+/etc/ssh/ssh_host_mldsa44_ed25519_key.pub
+/root/.profile
+/var/db/dhcpd.leases

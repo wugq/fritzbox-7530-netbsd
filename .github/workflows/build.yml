@@ -1,0 +1,70 @@
+# Build the FRITZ!Box 7530 images: the small board kernel (TFTP, root on a
+# USB stick) and the flash edition (kernel + root file system from the
+# official NetBSD 11.1 sets, for the UBI volume "kernel").  The images are
+# attached to the run; a tag v* also makes a release with them.
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # netbsd-11 branch, 2026-11-02 (the commit the drivers were tested on)
+  NETBSD_COMMIT: 4198f5370c187384b1de46b9b0fcd04462a420e0
+
+jobs:
+  images:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y device-tree-compiler
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h .
+
+      # The cross toolchain takes most of the time; it only depends on the
+      # NetBSD commit.
+      - name: Cache the NetBSD toolchain
+        uses: actions/cache@v4
+        with:
+          path: tooldir
+          key: tooldir-${{ env.NETBSD_COMMIT }}-v1
+
+      - name: FRITZ7530 kernel (TFTP / USB root)
+        run: KERNEL=FRITZ7530 tools/build.sh
+
+      - name: FRITZ7530_FLASH kernel
+        run: KERNEL=FRITZ7530_FLASH tools/build.sh
+
+      - name: Flash edition image (root from the NetBSD 11.1 sets)
+        run: SETS=1 tools/mkflash.sh
+
+      - name: Collect
+        run: |
+          mkdir -p out
+          cp tftp/netbsd-flash.itb tftp/netbsd-usb-FRITZ7530.itb out/
+          cd out && sha256sum *.itb > SHA256 && cat SHA256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fritzbox-7530-netbsd
+          path: out/
+
+      - name: Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" out/* --title "${GITHUB_REF_NAME}" --notes "See docs/flash-edition.md for installing netbsd-flash.itb."

@@ -1,0 +1,15 @@
+Hook the Qualcomm IPQ40xx support (sys/arch/arm/qcom) into the evbarm
+configuration, next to the other SoC families.
+
+diff --git a/sys/arch/evbarm/conf/files.generic b/sys/arch/evbarm/conf/files.generic
+index 001ca560c..9d94d523e 100644
+--- a/sys/arch/evbarm/conf/files.generic
++++ b/sys/arch/evbarm/conf/files.generic
+@@ -23,6 +23,7 @@ include "arch/arm/amlogic/files.meson"
+ include "arch/arm/broadcom/files.bcm2835"
+ include "arch/arm/nvidia/files.tegra"
+ include "arch/arm/nxp/files.imx"
++include "arch/arm/qcom/files.qcom"
+ include "arch/arm/rockchip/files.rockchip"
+ include "arch/arm/samsung/files.exynos"
+ include "arch/arm/sunxi/files.sunxi"

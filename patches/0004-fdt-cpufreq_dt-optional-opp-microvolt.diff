@@ -1,0 +1,29 @@
+cpufreq_dt: opp-microvolt is optional in operating-points-v2 tables, as
+in Linux.  The IPQ4019 OPP table has none (no CPU regulator); without this
+NetBSD refused the table ("couldn't parse operating points: 22").
+
+diff --git a/sys/dev/fdt/cpufreq_dt.c b/sys/dev/fdt/cpufreq_dt.c
+index d80eb90a5..b776e61fc 100644
+--- a/sys/dev/fdt/cpufreq_dt.c
++++ b/sys/dev/fdt/cpufreq_dt.c
+@@ -443,12 +443,18 @@ cpufreq_dt_parse_opp_v2(struct cpufreq_dt_softc *sc)
+ 			continue;
+ 		if (of_getprop_uint64(opp_node, "opp-hz", &opp_hz) != 0)
+ 			return EINVAL;
++		/*
++		 * opp-microvolt is optional (as in Linux): boards without a
++		 * CPU regulator have none.  The voltage is only used with a
++		 * cpu-supply.
++		 */
+ 		opp_uv = fdtbus_get_prop(opp_node, "opp-microvolt", &len);
+-		if (opp_uv == NULL || len < 1)
++		if (opp_uv != NULL && len < 4)
+ 			return EINVAL;
+ 		/* Table is in reverse order */
+ 		sc->sc_opp[index].freq_khz = (u_int)(opp_hz / 1000);
+-		sc->sc_opp[index].voltage_uv = be32toh(opp_uv[0]);
++		sc->sc_opp[index].voltage_uv =
++		    opp_uv != NULL ? be32toh(opp_uv[0]) : 0;
+ 		of_getprop_uint32(opp_node, "clock-latency-ns", &sc->sc_opp[index].latency_ns);
+ 		--index;
+ 	}

@@ -1,0 +1,2 @@
+# the root is the memory disk in the boot image; /etc/rc mounts the rest
+/dev/md0a	/	ffs	rw	1 1

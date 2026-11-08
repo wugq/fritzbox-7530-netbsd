@@ -1,0 +1,389 @@
+/* $NetBSD$ */
+
+/*-
+ * Copyright (c) 2026 wugq
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/*
+ * Qualcomm IPQ40xx QPIC NAND controller ("qcom,ipq4019-nand"): NetBSD
+ * glue for the OS-independent pieces:
+ *
+ *	qpic_nand.c		the controller, driven by register writes
+ *	dev/ubi/ubi_lite.c	the UBI on-flash format
+ *
+ * At attach: enable the clocks, save the boot loader's NAND configuration,
+ * reset the block (that takes it out of BAM mode, where the CPU could not
+ * write its registers), restore the configuration, read the chip ID, and
+ * scan the UBI partition (from the device tree's fixed-partitions, label
+ * "ubi").  The UBI volumes are character devices: minor number = volume
+ * id, e.g. "mknod /dev/ubivol3 c <major> 3".  Only the volume named
+ * "config" can be written (a LEB at a time, read-modify-write, as UBI's
+ * atomic LEB change); the others hold the boot images and stay read-only.
+ */
+
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD$");
+
+#include <sys/param.h>
+#include <sys/bus.h>
+#include <sys/conf.h>
+#include <sys/device.h>
+#include <sys/fcntl.h>
+#include <sys/kmem.h>
+#include <sys/mutex.h>
+#include <sys/systm.h>
+#include <sys/uio.h>
+
+#include <dev/fdt/fdtvar.h>
+
+#include <arm/qcom/qpic_nandvar.h>
+#include <dev/ubi/ubi_lite.h>
+
+#define NAND_VERSION		0xf08
+#define NAND_CTRL		0xf00
+
+struct qpic_softc {
+	device_t		sc_dev;
+	bus_space_tag_t		sc_bst;
+	bus_space_handle_t	sc_bsh;
+	kmutex_t		sc_lock;	/* one operation at a time */
+	struct qpic_nand	sc_nand;
+	struct ubi_lite		sc_ubi;
+	bool			sc_ubi_ok;
+	uint8_t			*sc_leb;	/* one LEB, for read() */
+};
+
+static int	qpic_match(device_t, cfdata_t, void *);
+static void	qpic_attach(device_t, device_t, void *);
+
+static const struct device_compatible_entry compat_data[] = {
+	{ .compat = "qcom,ipq4019-nand" },
+	DEVICE_COMPAT_EOL
+};
+
+CFATTACH_DECL_NEW(qcom_qpic, sizeof(struct qpic_softc),
+    qpic_match, qpic_attach, NULL, NULL);
+
+extern struct cfdriver qcomqpic_cd;
+
+#define UBIVOL_WRITABLE	"config"	/* the only volume we may write */
+static dev_type_open(ubivol_open);
+static dev_type_read(ubivol_read);
+static dev_type_write(ubivol_write);
+
+static const struct cdevsw ubivol_cdevsw = {
+	.d_open = ubivol_open,
+	.d_close = nullclose,
+	.d_read = ubivol_read,
+	.d_write = ubivol_write,
+	.d_ioctl = noioctl,
+	.d_stop = nostop,
+	.d_tty = notty,
+	.d_poll = nopoll,
+	.d_mmap = nommap,
+	.d_kqfilter = nokqfilter,
+	.d_discard = nodiscard,
+	.d_flag = D_OTHER | D_MPSAFE,
+};
+
+/* --- callbacks for the OS-independent code ------------------------ */
+
+static uint32_t
+qpic_rd(void *arg, uint32_t r)
+{
+	struct qpic_softc * const sc = arg;
+	return bus_space_read_4(sc->sc_bst, sc->sc_bsh, r);
+}
+
+static void
+qpic_wr(void *arg, uint32_t r, uint32_t v)
+{
+	struct qpic_softc * const sc = arg;
+	bus_space_write_4(sc->sc_bst, sc->sc_bsh, r, v);
+}
+
+static void
+qpic_delay(unsigned int us)
+{
+	delay(us);
+}
+
+static int
+qpic_ubi_read(void *arg, uint32_t page, uint8_t *buf)
+{
+	struct qpic_softc * const sc = arg;
+	const int error = qpic_nand_read_page(&sc->sc_nand, page, buf, NULL);
+
+	return error == QPIC_ERASED ? UBI_READ_ERASED : error;
+}
+
+static int
+qpic_ubi_program(void *arg, uint32_t page, const uint8_t *buf)
+{
+	struct qpic_softc * const sc = arg;
+	const int error = qpic_nand_program_page(&sc->sc_nand, page, buf);
+
+	if (error != 0)
+		device_printf(sc->sc_dev, "program page %#x: error %d, status "
+		    "%#x\n", page, error, sc->sc_nand.qn_status);
+	return error;
+}
+
+static int
+qpic_ubi_erase(void *arg, uint32_t block)
+{
+	struct qpic_softc * const sc = arg;
+	const int error = qpic_nand_erase_block(&sc->sc_nand, block);
+
+	if (error != 0)
+		device_printf(sc->sc_dev, "erase block %u: error %d, status "
+		    "%#x\n", block, error, sc->sc_nand.qn_status);
+	return error;
+}
+
+static bool
+qpic_ubi_bad(void *arg, uint32_t block)
+{
+	struct qpic_softc * const sc = arg;
+	return qpic_nand_block_bad(&sc->sc_nand, block);
+}
+
+/* --- UBI volumes as character devices ------------------------------ */
+
+static int
+ubivol_open(dev_t dev, int flag, int mode, struct lwp *l)
+{
+	struct qpic_softc * const sc = device_lookup_private(&qcomqpic_cd, 0);
+	const u_int vol = minor(dev);
+
+	if (sc == NULL || !sc->sc_ubi_ok)
+		return ENXIO;
+	if (vol >= UBI_LITE_MAXVOL || sc->sc_ubi.ul_vol[vol].v_reserved_pebs == 0)
+		return ENXIO;
+	if ((flag & FWRITE) &&
+	    strcmp(sc->sc_ubi.ul_vol[vol].v_name, UBIVOL_WRITABLE) != 0)
+		return EROFS;
+	return 0;
+}
+
+static int
+ubivol_read(dev_t dev, struct uio *uio, int flag)
+{
+	struct qpic_softc * const sc = device_lookup_private(&qcomqpic_cd, 0);
+	struct ubi_lite * const u = &sc->sc_ubi;
+	const u_int vol = minor(dev);
+	const uint64_t size = (uint64_t)u->ul_vol[vol].v_reserved_pebs *
+	    u->ul_leb_size;
+	int error = 0;
+
+	while (uio->uio_resid > 0 && (uint64_t)uio->uio_offset < size) {
+		const uint32_t lnum = uio->uio_offset / u->ul_leb_size;
+		const uint32_t off = uio->uio_offset % u->ul_leb_size;
+		const size_t n = MIN(uio->uio_resid, u->ul_leb_size - off);
+
+		mutex_enter(&sc->sc_lock);
+		error = ubi_lite_read_leb(u, vol, lnum, off, sc->sc_leb, n);
+		mutex_exit(&sc->sc_lock);
+		if (error != 0)
+			break;
+		if ((error = uiomove(sc->sc_leb, n, uio)) != 0)
+			break;
+	}
+	return error;
+}
+
+static int
+ubivol_write(dev_t dev, struct uio *uio, int flag)
+{
+	struct qpic_softc * const sc = device_lookup_private(&qcomqpic_cd, 0);
+	struct ubi_lite * const u = &sc->sc_ubi;
+	const u_int vol = minor(dev);
+	const uint64_t size = (uint64_t)u->ul_vol[vol].v_reserved_pebs *
+	    u->ul_leb_size;
+	int error = 0;
+
+	if (strcmp(u->ul_vol[vol].v_name, UBIVOL_WRITABLE) != 0)
+		return EROFS;
+	while (uio->uio_resid > 0) {
+		if ((uint64_t)uio->uio_offset >= size)
+			return ENOSPC;
+		const uint32_t lnum = uio->uio_offset / u->ul_leb_size;
+		const uint32_t off = uio->uio_offset % u->ul_leb_size;
+		const size_t n = MIN(uio->uio_resid, u->ul_leb_size - off);
+		uint32_t len;
+
+		mutex_enter(&sc->sc_lock);
+		/* the whole LEB: keep what is around the part written */
+		error = ubi_lite_read_leb(u, vol, lnum, 0, sc->sc_leb,
+		    u->ul_leb_size);
+		if (error == 0)
+			error = uiomove(sc->sc_leb + off, n, uio);
+		if (error == 0) {
+			/* program only up to the last byte that isn't 0xff */
+			for (len = u->ul_leb_size; len > 0 &&
+			    sc->sc_leb[len - 1] == 0xff; len--)
+				continue;
+			error = ubi_lite_write_leb(u, vol, lnum, sc->sc_leb,
+			    len);
+			if (error != 0)
+				device_printf(sc->sc_dev, "LEB %u write: error "
+				    "%d (PEB %u, offset %u: read %d, want %#x "
+				    "got %#x)\n", lnum, error, u->ul_fail_peb,
+				    u->ul_fail_off, u->ul_fail_error,
+				    u->ul_fail_want, u->ul_fail_got);
+		}
+		mutex_exit(&sc->sc_lock);
+		if (error != 0)
+			break;
+	}
+	return error;
+}
+
+/* --- autoconf ------------------------------------------------------ */
+
+/* the "ubi" partition of the device tree: offset and size in bytes */
+static bool
+qpic_ubi_partition(int phandle, bus_addr_t *off, bus_size_t *size)
+{
+	for (int chip = OF_child(phandle); chip; chip = OF_peer(chip)) {
+		const int parts = of_find_firstchild_byname(chip, "partitions");
+		if (parts <= 0)
+			continue;
+		for (int p = OF_child(parts); p; p = OF_peer(p)) {
+			const char *label = fdtbus_get_string(p, "label");
+			if (label != NULL && strcmp(label, "ubi") == 0 &&
+			    fdtbus_get_reg(p, 0, off, size) == 0)
+				return true;
+		}
+	}
+	return false;
+}
+
+static int
+qpic_match(device_t parent, cfdata_t cf, void *aux)
+{
+	struct fdt_attach_args * const faa = aux;
+
+	return of_compatible_match(faa->faa_phandle, compat_data);
+}
+
+static void
+qpic_attach(device_t parent, device_t self, void *aux)
+{
+	struct qpic_softc * const sc = device_private(self);
+	struct fdt_attach_args * const faa = aux;
+	const int phandle = faa->faa_phandle;
+	struct qpic_nand * const qn = &sc->sc_nand;
+	struct ubi_lite * const u = &sc->sc_ubi;
+	struct fdtbus_reset *rst;
+	struct clk *clk;
+	bus_addr_t addr, uoff;
+	bus_size_t size, usize;
+	uint32_t id;
+	int error;
+
+	sc->sc_dev = self;
+	sc->sc_bst = faa->faa_bst;
+	if (fdtbus_get_reg(phandle, 0, &addr, &size) != 0 ||
+	    bus_space_map(sc->sc_bst, addr, size, 0, &sc->sc_bsh) != 0) {
+		aprint_error(": couldn't map registers\n");
+		return;
+	}
+	for (u_int i = 0; (clk = fdtbus_clock_get_index(phandle, i)) != NULL;
+	    i++)
+		clk_enable(clk);
+	if ((rst = fdtbus_reset_get(phandle, "qpic")) == NULL) {
+		aprint_error(": no \"qpic\" reset\n");
+		return;
+	}
+	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_NONE);
+
+	const uint32_t ver = qpic_rd(sc, NAND_VERSION);
+	aprint_naive("\n");
+	aprint_normal(": QPIC NAND controller v%u.%u\n", ver >> 28,
+	    (ver >> 16) & 0xfff);
+
+	/* out of BAM mode: save the boot loader's setup, reset, restore */
+	qn->qn_arg = sc;
+	qn->qn_read = qpic_rd;
+	qn->qn_write = qpic_wr;
+	qn->qn_delay = qpic_delay;
+	const uint32_t ctrl = qpic_rd(sc, NAND_CTRL);
+	qpic_nand_save(qn);
+	fdtbus_reset_assert(rst);
+	delay(100);
+	fdtbus_reset_deassert(rst);
+	delay(1000);
+	qpic_nand_restore(qn);
+	if (qpic_nand_read_id(qn, &id) != 0) {
+		aprint_error_dev(self, "no answer to READ ID\n");
+		return;
+	}
+	aprint_normal_dev(self, "NAND id %02x %02x %02x %02x (%s), boot "
+	    "loader used %s mode\n", id & 0xff, (id >> 8) & 0xff,
+	    (id >> 16) & 0xff, id >> 24,
+	    (id & 0xff) == 0xc2 ? "Macronix" : "?",
+	    (ctrl & 1) ? "BAM" : "register");
+
+	if (!qpic_ubi_partition(phandle, &uoff, &usize)) {
+		aprint_error_dev(self, "no \"ubi\" partition in the device "
+		    "tree\n");
+		return;
+	}
+	u->ul_arg = sc;
+	u->ul_read_page = qpic_ubi_read;
+	u->ul_program_page = qpic_ubi_program;
+	u->ul_erase_block = qpic_ubi_erase;
+	u->ul_block_bad = qpic_ubi_bad;
+	u->ul_first_peb = uoff / QPIC_BLOCK_SIZE;
+	u->ul_npebs = usize / QPIC_BLOCK_SIZE;
+	u->ul_page_size = QPIC_PAGE_SIZE;
+	u->ul_pages_per_peb = QPIC_PAGES_PER_BLOCK;
+	u->ul_peb = kmem_zalloc(u->ul_npebs * sizeof(*u->ul_peb), KM_SLEEP);
+	u->ul_buf = kmem_alloc(QPIC_PAGE_SIZE, KM_SLEEP);
+	if ((error = ubi_lite_scan(u)) != 0) {
+		aprint_error_dev(self, "UBI scan failed (%d)\n", error);
+		return;
+	}
+	sc->sc_leb = kmem_alloc(u->ul_leb_size, KM_SLEEP);
+	sc->sc_ubi_ok = true;
+	aprint_normal_dev(self, "UBI: %u PEBs (%u used, %u free, %u bad, %u "
+	    "corrupt), LEB %u bytes, max sqnum %llu\n", u->ul_npebs,
+	    u->ul_nused, u->ul_nfree, u->ul_nbad, u->ul_ncorrupt,
+	    u->ul_leb_size, (unsigned long long)u->ul_max_sqnum);
+	for (u_int v = 0; v < UBI_LITE_MAXVOL; v++) {
+		if (u->ul_vol[v].v_reserved_pebs == 0)
+			continue;
+		aprint_normal_dev(self, "UBI volume %u \"%s\": %u LEBs, %u "
+		    "with data, %s\n", v, u->ul_vol[v].v_name,
+		    u->ul_vol[v].v_reserved_pebs, ubi_lite_mapped(u, v),
+		    u->ul_vol[v].v_type == 1 ? "dynamic" : "static");
+	}
+
+	int bmajor = -1, cmajor = -1;
+	if (devsw_attach("ubivol", NULL, &bmajor, &ubivol_cdevsw,
+	    &cmajor) == 0)
+		aprint_normal_dev(self, "volumes: character major %d, minor = "
+		    "volume id\n", cmajor);
+}

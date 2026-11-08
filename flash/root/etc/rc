@@ -1,0 +1,90 @@
+#!/bin/sh
+#
+# /etc/rc of the FRITZ!Box 7530 flash edition.
+#
+# NetBSD's init(8) runs this once at boot, then starts the getty on the
+# console from /etc/ttys.  The full NetBSD system uses rc.subr and the
+# scripts in /etc/rc.d; this small one does the same jobs in order, so the
+# whole boot can be read in one page.  The root file system is a memory
+# disk (md0) inside the boot image: changes are lost at reboot.  The
+# settings are in /etc/router.conf.
+#
+export PATH=/sbin:/bin:/usr/sbin:/usr/bin
+umask 022
+. /etc/rc.settings	# config_vol, mount_usb: where the settings are kept
+echo "flash edition: starting"
+
+# init(8) mounted the root read-only: make it writable (it is RAM anyway)
+mount -uw /
+
+# file systems that live in RAM or in the kernel
+mount -t tmpfs tmpfs /tmp
+mount -t ptyfs ptyfs /dev/pts
+mount -t kernfs kernfs /kern
+mount -t procfs procfs /proc
+touch /var/run/utmp /var/run/utmpx /var/log/wtmp /var/log/wtmpx
+dmesg > /var/run/dmesg.boot
+
+# --- saved settings (saveconfig(8))
+# From the NAND (UBI volume "config", a tar archive) if it holds any,
+# otherwise from /fritz/ on a USB stick (FFS or FAT): they replace the
+# image's copies.  USB attaches after the kernel has mounted the root, so
+# wait a few seconds for a disk to show up.
+if config_vol && config_has_settings; then
+	echo "flash edition: settings from the NAND ($CONFIG_DEV)"
+	(cd / && dd if=$CONFIG_DEV bs=126976 2>/dev/null | pax -r -pe)
+else
+	for i in 1 2 3 4 5 6 7 8; do
+		case "$(sysctl -n hw.disknames)" in *sd0*) break ;; esac
+		sleep 1
+	done
+	if mount_usb ro; then
+		if [ -d /mnt/fritz ]; then
+			echo "flash edition: settings from the USB stick ($USB_DEV)"
+			(cd /mnt/fritz && pax -rw -pe . /)
+		fi
+		umount /mnt
+	fi
+fi
+
+. /etc/router.conf
+hostname "$HOSTNAME"
+
+# --- network
+ifconfig lo0 inet 127.0.0.1 netmask 255.0.0.0 up
+ifconfig qcomedma0 inet "$LAN_ADDR" up
+if [ "${WAN_PORT:-0}" != 0 ]; then
+	# one switch port becomes the WAN: 802.1Q VLAN 2, tagged to the CPU
+	sysctl -qw hw.qcomess0.wan_port="$WAN_PORT"
+	ifconfig vlan2 create
+	ifconfig vlan2 vlan 2 vlanif qcomedma0
+	ifconfig vlan2 up
+	case "$WAN_MODE" in
+	dhcp)	dhcpcd -b -q vlan2 ;;
+	static)	ifconfig vlan2 inet "$WAN_ADDR"
+		[ -n "$WAN_GW" ] && route -q add default "$WAN_GW" ;;
+	esac
+fi
+sysctl -qw net.inet.ip.forwarding=1
+if [ "$NAT" = yes ]; then
+	npfctl reload /etc/npf.conf && npfctl start
+fi
+if [ "$DHCPD" = yes ]; then
+	touch /var/db/dhcpd.leases
+	dhcpd -q qcomedma0
+fi
+
+# --- services
+# ssh host keys: not in the (public) image; made at the first boot,
+# kept by saveconfig
+# (ssh-keygen -A makes only the missing ones)
+[ -f /etc/ssh/ssh_host_ed25519_key ] ||
+	echo "flash edition: creating ssh host keys"
+ssh-keygen -A >/dev/null
+syslogd -s
+/usr/sbin/sshd
+[ "$NTP" = yes ] && ntpd -p /var/run/ntpd.pid
+powerd
+
+echo "flash edition: up ($(uname -v | cut -d: -f1))"
+exit 0

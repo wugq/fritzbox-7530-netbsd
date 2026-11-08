@@ -1,0 +1,18 @@
+# A short services(5): the names this router's programs use.  The full
+# NetBSD file is 3.4 MB.
+ftp		21/tcp
+ssh		22/tcp
+telnet		23/tcp
+smtp		25/tcp
+domain		53/tcp
+domain		53/udp
+bootps		67/udp
+bootpc		68/udp
+tftp		69/udp
+http		80/tcp
+ntp		123/udp
+https		443/tcp
+syslog		514/udp
+dhcpv6-client	546/udp
+dhcpv6-server	547/udp
+iperf3		5201/tcp

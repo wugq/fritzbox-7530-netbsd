@@ -1,0 +1,16 @@
+The IPQ40xx interrupt controller is a GICv2 with Qualcomm compatible
+strings only ("qcom,msm-qgic2", as in Linux qcom-ipq4019.dtsi); let gic_fdt
+match it instead of adding "arm,cortex-a7-gic" to the device tree.
+
+diff --git a/sys/arch/arm/fdt/gic_fdt.c b/sys/arch/arm/fdt/gic_fdt.c
+index 8c0c17bd3..29e006564 100644
+--- a/sys/arch/arm/fdt/gic_fdt.c
++++ b/sys/arch/arm/fdt/gic_fdt.c
+@@ -114,6 +114,7 @@ static const struct device_compatible_entry compat_data[] = {
+ 	{ .compat = "arm,cortex-a15-gic" },
+ 	{ .compat = "arm,cortex-a9-gic" },
+ 	{ .compat = "arm,cortex-a7-gic" },
++	{ .compat = "qcom,msm-qgic2" },
+ 	DEVICE_COMPAT_EOL
+ };
+ 

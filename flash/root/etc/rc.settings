@@ -1,0 +1,43 @@
+# Where the flash edition keeps its settings, for /etc/rc and saveconfig.
+#
+# 1. The NAND: the UBI volume named "config" (two 124 KB LEBs, created in
+#    U-Boot with "ubi create config 0x3e000"), read and written through
+#    the qcomqpic driver.  It holds a tar archive (ustar) of the files in
+#    /etc/saveconfig.list.
+# 2. A USB stick: the files under /fritz/ on it (FFS sd0a, the full NetBSD
+#    stick, or FAT sd0e/sd0i).  Used when the NAND has no settings.
+
+# config_vol -- set CONFIG_DEV to the "config" volume's device node,
+# making it if needed.  The driver prints the numbers at attach:
+#   qcomqpic0: UBI volume 5 "config": 2 LEBs, ...
+#   qcomqpic0: volumes: character major 369, minor = volume id
+config_vol() {
+	local boot=/var/run/dmesg.boot id major
+	[ -f $boot ] || dmesg > $boot
+	id=$(sed -n 's/.*UBI volume \([0-9]*\) "config".*/\1/p' $boot | head -1)
+	major=$(sed -n 's/.*character major \([0-9]*\),.*/\1/p' $boot | head -1)
+	CONFIG_DEV=
+	[ -n "$id" ] && [ -n "$major" ] || return 1
+	CONFIG_DEV=/dev/ubivol$id
+	[ -c $CONFIG_DEV ] || mknod $CONFIG_DEV c $major $id
+}
+
+# config_has_settings -- does the volume start with a tar header?
+config_has_settings() {
+	[ "$(dd if=$CONFIG_DEV bs=512 count=1 2>/dev/null |
+	    dd bs=1 skip=257 count=5 2>/dev/null)" = ustar ]
+}
+
+# mount_usb ro|rw -- mount the USB stick on /mnt.  Tries sd0a (FFS), then
+# sd0e and sd0i (FAT).  Sets USB_DEV.  Returns 1 if none.
+mount_usb() {
+	local opt=-r
+	[ "$1" = rw ] && opt=
+	for USB_DEV in /dev/sd0a /dev/sd0e /dev/sd0i; do
+		[ -b "$USB_DEV" ] || continue
+		mount -t ffs $opt "$USB_DEV" /mnt 2>/dev/null && return 0
+		mount -t msdos $opt "$USB_DEV" /mnt 2>/dev/null && return 0
+	done
+	USB_DEV=
+	return 1
+}
