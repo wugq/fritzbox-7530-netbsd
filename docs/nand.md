@@ -88,7 +88,9 @@ mknod /dev/ubivol4 c <major> 4          # the major is printed at attach
 dd if=/dev/ubivol4 bs=126976 count=116 | head -c <size> | sha256
 ```
 
-**Only the volume named `config` can be written**; the others hold boot images.
+**Only the volume named `config` can be written**; the others hold boot images. Tested:
+opening the `kernel` volume for writing fails with `EROFS` ("Read-only file system"), and
+its contents stay identical to the installed image.
 
 ### Verified
 

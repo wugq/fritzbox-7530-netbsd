@@ -14,8 +14,9 @@
 config_vol() {
 	local boot=/var/run/dmesg.boot id major
 	[ -f $boot ] || dmesg > $boot
-	id=$(sed -n 's/.*UBI volume \([0-9]*\) "config".*/\1/p' $boot | head -1)
-	major=$(sed -n 's/.*character major \([0-9]*\),.*/\1/p' $boot | head -1)
+	# the message buffer survives a warm reset: the last match is this boot's
+	id=$(sed -n 's/.*UBI volume \([0-9]*\) "config".*/\1/p' $boot | tail -1)
+	major=$(sed -n 's/.*character major \([0-9]*\),.*/\1/p' $boot | tail -1)
 	CONFIG_DEV=
 	[ -n "$id" ] && [ -n "$major" ] || return 1
 	CONFIG_DEV=/dev/ubivol$id
