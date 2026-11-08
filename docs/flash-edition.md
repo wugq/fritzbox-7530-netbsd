@@ -127,7 +127,7 @@ ubi create netbsd 0x1000000              # 16 MB
 setenv ipaddr 192.168.77.1; setenv serverip 192.168.77.2
 tftpboot 0x85000000 netbsd-flash.itb
 ubi write 0x85000000 netbsd ${filesize}
-ubi read 0x88000000 netbsd ${filesize}; cmp.b 0x85000000 0x88000000 ${filesize}
+ubi read 0x89000000 netbsd ${filesize}; cmp.b 0x85000000 0x89000000 ${filesize}
 ubi read 0x85000000 netbsd; bootm 0x85000000    # try it
 ```
 
@@ -141,9 +141,14 @@ Updating later (U-Boot):
 
 ```
 ubi part ubi
+setenv ipaddr 192.168.77.1; setenv serverip 192.168.77.2
 tftpboot 0x85000000 netbsd-flash.itb
 ubi write 0x85000000 kernel ${filesize}
+ubi read 0x89000000 kernel ${filesize}; cmp.b 0x85000000 0x89000000 ${filesize}
 ```
+
+(Read back to 0x89000000, not 0x88000000: U-Boot itself sits up to 0x88013000.) The
+image from the GitHub Actions workflow was installed this way and boots unattended.
 
 | to | do |
 |---|---|
