@@ -40,6 +40,10 @@
  * id, e.g. "mknod /dev/ubivol3 c <major> 3".  Only the volume named
  * "config" can be written (a LEB at a time, read-modify-write, as UBI's
  * atomic LEB change); the others hold the boot images and stay read-only.
+ *
+ * Minor 255 is the whole chip, read-only: every page with ECC applied, as
+ * Linux's /dev/mtdN gives it, for backups.  Pages that fail ECC (a bad
+ * block) are returned as read and reported on the console.
  */
 
 #include <sys/cdefs.h>
@@ -71,7 +75,9 @@ struct qpic_softc {
 	struct qpic_nand	sc_nand;
 	struct ubi_lite		sc_ubi;
 	bool			sc_ubi_ok;
+	bool			sc_nand_ok;	/* the chip answered */
 	uint8_t			*sc_leb;	/* one LEB, for read() */
+	uint8_t			*sc_page;	/* one page, for the chip device */
 };
 
 static int	qpic_match(device_t, cfdata_t, void *);
@@ -88,6 +94,8 @@ CFATTACH_DECL_NEW(qcom_qpic, sizeof(struct qpic_softc),
 extern struct cfdriver qcomqpic_cd;
 
 #define UBIVOL_WRITABLE	"config"	/* the only volume we may write */
+#define UBIVOL_CHIP	255		/* minor: the whole chip, read-only */
+#define QPIC_CHIP_SIZE	(128U * 1024 * 1024)	/* 1 Gbit (id c2 f1) */
 static dev_type_open(ubivol_open);
 static dev_type_read(ubivol_read);
 static dev_type_write(ubivol_write);
@@ -177,6 +185,11 @@ ubivol_open(dev_t dev, int flag, int mode, struct lwp *l)
 	struct qpic_softc * const sc = device_lookup_private(&qcomqpic_cd, 0);
 	const u_int vol = minor(dev);
 
+	if (vol == UBIVOL_CHIP) {
+		if (sc == NULL || !sc->sc_nand_ok)
+			return ENXIO;
+		return (flag & FWRITE) ? EROFS : 0;
+	}
 	if (sc == NULL || !sc->sc_ubi_ok)
 		return ENXIO;
 	if (vol >= UBI_LITE_MAXVOL || sc->sc_ubi.ul_vol[vol].v_reserved_pebs == 0)
@@ -187,12 +200,41 @@ ubivol_open(dev_t dev, int flag, int mode, struct lwp *l)
 	return 0;
 }
 
+/* minor UBIVOL_CHIP: the raw chip, a page at a time, ECC corrected */
+static int
+chip_read(struct qpic_softc *sc, struct uio *uio)
+{
+	int error = 0;
+
+	while (uio->uio_resid > 0 && uio->uio_offset < QPIC_CHIP_SIZE) {
+		const uint32_t page = uio->uio_offset / QPIC_PAGE_SIZE;
+		const uint32_t off = uio->uio_offset % QPIC_PAGE_SIZE;
+		const size_t n = MIN(uio->uio_resid, QPIC_PAGE_SIZE - off);
+
+		mutex_enter(&sc->sc_lock);
+		error = qpic_nand_read_page(&sc->sc_nand, page, sc->sc_page,
+		    NULL);
+		mutex_exit(&sc->sc_lock);
+		if (error == ETIMEDOUT)
+			return EIO;
+		if (error > 0)		/* uncorrectable: keep what was read */
+			device_printf(sc->sc_dev, "page %#x (offset %#x): "
+			    "ECC error\n", page, page * QPIC_PAGE_SIZE);
+		if ((error = uiomove(sc->sc_page + off, n, uio)) != 0)
+			break;
+	}
+	return error;
+}
+
 static int
 ubivol_read(dev_t dev, struct uio *uio, int flag)
 {
 	struct qpic_softc * const sc = device_lookup_private(&qcomqpic_cd, 0);
 	struct ubi_lite * const u = &sc->sc_ubi;
 	const u_int vol = minor(dev);
+
+	if (vol == UBIVOL_CHIP)
+		return chip_read(sc, uio);
 	const uint64_t size = (uint64_t)u->ul_vol[vol].v_reserved_pebs *
 	    u->ul_leb_size;
 	int error = 0;
@@ -219,6 +261,8 @@ ubivol_write(dev_t dev, struct uio *uio, int flag)
 	struct qpic_softc * const sc = device_lookup_private(&qcomqpic_cd, 0);
 	struct ubi_lite * const u = &sc->sc_ubi;
 	const u_int vol = minor(dev);
+	if (vol == UBIVOL_CHIP)
+		return EROFS;
 	const uint64_t size = (uint64_t)u->ul_vol[vol].v_reserved_pebs *
 	    u->ul_leb_size;
 	int error = 0;
@@ -345,11 +389,13 @@ qpic_attach(device_t parent, device_t self, void *aux)
 	    (id >> 16) & 0xff, id >> 24,
 	    (id & 0xff) == 0xc2 ? "Macronix" : "?",
 	    (ctrl & 1) ? "BAM" : "register");
+	sc->sc_page = kmem_alloc(QPIC_PAGE_SIZE, KM_SLEEP);
+	sc->sc_nand_ok = true;
 
 	if (!qpic_ubi_partition(phandle, &uoff, &usize)) {
 		aprint_error_dev(self, "no \"ubi\" partition in the device "
 		    "tree\n");
-		return;
+		goto devsw;
 	}
 	u->ul_arg = sc;
 	u->ul_read_page = qpic_ubi_read;
@@ -364,7 +410,7 @@ qpic_attach(device_t parent, device_t self, void *aux)
 	u->ul_buf = kmem_alloc(QPIC_PAGE_SIZE, KM_SLEEP);
 	if ((error = ubi_lite_scan(u)) != 0) {
 		aprint_error_dev(self, "UBI scan failed (%d)\n", error);
-		return;
+		goto devsw;
 	}
 	sc->sc_leb = kmem_alloc(u->ul_leb_size, KM_SLEEP);
 	sc->sc_ubi_ok = true;
@@ -381,9 +427,11 @@ qpic_attach(device_t parent, device_t self, void *aux)
 		    u->ul_vol[v].v_type == 1 ? "dynamic" : "static");
 	}
 
+devsw:;
 	int bmajor = -1, cmajor = -1;
 	if (devsw_attach("ubivol", NULL, &bmajor, &ubivol_cdevsw,
 	    &cmajor) == 0)
 		aprint_normal_dev(self, "volumes: character major %d, minor = "
-		    "volume id\n", cmajor);
+		    "volume id, %d = the whole chip (read-only)\n", cmajor,
+		    UBIVOL_CHIP);
 }
