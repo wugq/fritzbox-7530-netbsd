@@ -1,0 +1,51 @@
+tprof: start, stop, configure and read the counters with high-priority
+cross-calls.  Low-priority ones run in each CPU's xcall thread
+(PRI_XCALL), which a busy network workqueue (PRI_SOFTNET) can keep off a
+CPU for as long as traffic lasts: under forwarding load tprof's counters
+stayed at their reset value on the CPUs doing the forwarding, and the
+profile showed everything but the forwarding.  The functions only touch
+PMU registers, which is fine from the softint XC_HIGHPRI uses.
+
+diff --git a/sys/dev/tprof/tprof.c b/sys/dev/tprof/tprof.c
+index 65cba2c8b..b915da471 100644
+--- a/sys/dev/tprof/tprof.c
++++ b/sys/dev/tprof/tprof.c
+@@ -390,7 +390,8 @@ tprof_start(tprof_countermask_t runmask)
+ 	}
+ 
+ 	runmask &= tb->tb_softc.sc_ctr_configured_mask;
+-	xc = xc_broadcast(0, tprof_start_cpu, tb, (void *)(uintptr_t)runmask);
++	xc = xc_broadcast(XC_HIGHPRI, tprof_start_cpu, tb,
++	    (void *)(uintptr_t)runmask);
+ 	xc_wait(xc);
+ 	mutex_enter(&tprof_lock);
+ 	tb->tb_softc.sc_ctr_running_mask |= runmask;
+@@ -429,7 +430,8 @@ tprof_stop(tprof_countermask_t stopmask)
+ 		goto done;
+ 	}
+ 
+-	xc = xc_broadcast(0, tprof_stop_cpu, tb, (void *)(uintptr_t)stopmask);
++	xc = xc_broadcast(XC_HIGHPRI, tprof_stop_cpu, tb,
++	    (void *)(uintptr_t)stopmask);
+ 	xc_wait(xc);
+ 	mutex_enter(&tprof_lock);
+ 	tb->tb_softc.sc_ctr_running_mask &= ~stopmask;
+@@ -574,7 +576,7 @@ tprof_configure_event(const tprof_param_t *param)
+ 	/* On the backend side, p_value is used as the reset value */
+ 	sc_param->p_value = tb->tb_softc.sc_count[c].ctr_counter_reset_val;
+ 
+-	xc = xc_broadcast(0, tprof_configure_event_cpu,
++	xc = xc_broadcast(XC_HIGHPRI, tprof_configure_event_cpu,
+ 	    tb, (void *)(uintptr_t)c);
+ 	xc_wait(xc);
+ 
+@@ -639,7 +641,8 @@ tprof_getcounts(tprof_counts_t *counts)
+ 	if (ci == NULL)
+ 		return ESRCH;
+ 
+-	xc = xc_unicast(0, tprof_getcounts_cpu, tb, counts->c_count, ci);
++	xc = xc_unicast(XC_HIGHPRI, tprof_getcounts_cpu, tb,
++	    counts->c_count, ci);
+ 	xc_wait(xc);
+ 
+ 	counts->c_ncounters = tb->tb_softc.sc_ncounters;
