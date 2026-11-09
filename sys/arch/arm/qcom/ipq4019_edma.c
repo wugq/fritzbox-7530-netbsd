@@ -169,7 +169,15 @@ struct edma_rrd {
  * reused them.
  */
 #define EDMA_NTX		128
-#define EDMA_NRX		256	/* 128 overflowed under bursts (MISC_ISR RX_URG); with 512, queues 2 and 6 stop after a few dozen frames */
+/*
+ * RX ring entries per queue.  128 overflowed under bursts (MISC_ISR
+ * RX_URG).  512 works (its early failure, queues stopping after a few
+ * dozen frames, was the work item queued twice, see edma_rx_work()), but
+ * forwarded one flow about 10% slower than 256 in an A/B test (613 vs 683
+ * Mbit/s), probably because 4 x 512 buffers of 2 KB miss the 256 KB L2
+ * cache more often (not measured).
+ */
+#define EDMA_NRX		256
 #define EDMA_RING_STRIDE	PAGE_SIZE	/* each ring on its own page */
 #define EDMA_RING_SIZE		((EDMA_NTXQ + EDMA_NRXQ) * EDMA_RING_STRIDE)
 #define EDMA_TPD_OFF(k)		((k) * EDMA_RING_STRIDE)
