@@ -1,0 +1,48 @@
+gic: set a PPI's priority on every CPU that enables it.  SGI/PPI
+priorities are banked per CPU like the enables, but armgic_establish_irq()
+wrote it on the establishing CPU only.  A PPI established after the
+secondary CPUs started (the PMU, from config_interrupts()) stayed at
+priority 0xff on the other CPUs and never arrived there: tprof(8) sampled
+one CPU of four.
+
+diff --git a/sys/arch/arm/cortex/gic.c b/sys/arch/arm/cortex/gic.c
+index a44fddff7..6ce9e96f6 100644
+--- a/sys/arch/arm/cortex/gic.c
++++ b/sys/arch/arm/cortex/gic.c
+@@ -200,9 +200,35 @@ armgic_unblock_irqs(struct pic_softc *pic, size_t irq_base, uint32_t irq_mask)
+ 	struct armgic_softc * const sc = PICTOSOFTC(pic);
+ 	const size_t group = irq_base / 32;
+ 
+-	if (group == 0)
++	if (group == 0) {
+ 		sc->sc_enabled_local |= irq_mask;
+ 
++		/*
++		 * SGI/PPI priorities are banked per CPU, like the enables.
++		 * armgic_establish_irq() set the priority on its own CPU
++		 * only; a PPI established after the secondary CPUs started
++		 * (a config_interrupts() device such as the PMU) stays at
++		 * 0xff, which is never signalled, on the others.  Set it on
++		 * this CPU before enabling (pic_establish_intr() calls us
++		 * on every CPU for a per-CPU interrupt).
++		 */
++		for (uint32_t m = irq_mask; m != 0; m &= m - 1) {
++			const size_t irq = ffs(m) - 1;
++			struct intrsource * const is =
++			    sc->sc_pic.pic_sources[irq];
++			if (is == NULL || is == &armgic_dummy_source)
++				continue;
++			const bus_size_t priority_reg =
++			    GICD_IPRIORITYRn(irq / 4);
++			const u_int byte_shift = 8 * (irq & 3);
++			uint32_t priority = gicd_read(sc, priority_reg);
++			priority &= ~(0xffU << byte_shift);
++			priority |= armgic_ipl_to_priority(is->is_ipl) <<
++			    byte_shift;
++			gicd_write(sc, priority_reg, priority);
++		}
++	}
++
+ 	gicd_write(sc, GICD_ISENABLERn(group), irq_mask);
+ }
+ 
