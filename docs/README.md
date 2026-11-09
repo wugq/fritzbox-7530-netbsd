@@ -40,3 +40,17 @@ wrong turns, the cause, the fix, and the machinery behind it. Each stands on its
 - [Where Do the Cycles Go? Profiling Packet Forwarding with tprof](articles/profiling-forwarding.md)
   - performance counters, interrupt controllers, thread priorities, how a mutex behaves
     on a multiprocessor; two NetBSD bugs and a global lock in the forwarding path
+- [Receiving Packets without Drowning: Interrupts, Threads and a Hang](articles/receiving-packets.md)
+  - descriptor rings, receive livelock and NAPI, why TCP retransmits reordered packets,
+    a work item queued twice
+- [Counting Cycles: Making an Ethernet Driver Fast](articles/counting-cycles.md)
+  - a cycle budget per packet, device register reads, lock contention and per-CPU queues,
+    RSS hashing, cache maintenance for DMA, Ethernet flow control
+- [Inherited Hardware: When the Boot Loader Was There First](articles/inherited-hardware.md)
+  - what survives a hand-over, undo versus reset, a serial link that must lock on, the
+    NAND controller's DMA mode, overwriting U-Boot in memory
+- [A Serial Console Driver: from Polling to Interrupts](articles/serial-console.md)
+  - FIFOs and watermarks, a 256-character hang, hardware and software interrupts, a race
+    on the terminal's queue
+- [When It Is Not the Software: the Test Bench](articles/not-the-software.md)
+  - back-powering through a serial adapter, loose wires, link downshifts, a checklist
