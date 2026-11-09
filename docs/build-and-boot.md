@@ -16,6 +16,11 @@ NetBSD's source tree (`src/`) is not in this repository, only what was added and
   - `0003`: NetBSD's GIC driver learns the `qcom,msm-qgic2` compatible string.
   - `0004`: `cpufreqdt` accepts OPP tables without `opp-microvolt` (the IPQ4019 has no CPU
     regulator; Linux allows it too), so CPU frequency scaling works.
+  - `0005`: the GIC driver sets a PPI's priority on every CPU that enables it (priorities
+    of per-CPU interrupts are banked, like their enables); without it the PMU interrupt
+    worked on one CPU only and `tprof` sampled one CPU of four.
+  - `0006`: `tprof` starts and stops its counters with high-priority cross-calls, so a
+    busy network workqueue cannot hold them off (docs/kernel-config.md, "Profiling").
 
 Why hook into **GENERIC** rather than write a board kernel first? On ARM, NetBSD's idea is
 one kernel for every board: GENERIC carries every SoC's drivers, and what differs between

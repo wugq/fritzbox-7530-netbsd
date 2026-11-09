@@ -70,3 +70,37 @@ ITB=netbsd-usb-FRITZ7530.itb tools/hwtest.sh "notes"
 
 Kernels other than GENERIC get their name in the image names, so both kinds can sit in
 the TFTP directory side by side.
+
+## Profiling with tprof
+
+The board kernels have `armpmu` and `tprof`, and the flash edition carries `tprof(8)`:
+
+```
+tprof list                                         # events: CPU_CYCLES, INST_RETIRED, ...
+tprof monitor -e CPU_CYCLES -o /tmp/p.prof sleep 8 # sample all CPUs for 8 seconds
+tprof analyze -s /tmp/p.prof | head -40            # hottest functions
+```
+
+`tprof analyze` columns: percentage, samples, then one column per event, then pid, lwp,
+cpu and k (1: kernel).
+
+Two NetBSD problems kept it from seeing forwarding; patches 0005 and 0006 fix them:
+
+1. **One CPU of four.** The PMU interrupt is a PPI, set up from `config_interrupts()`
+   after the secondary CPUs started. PPI priorities are banked per CPU, and the GIC driver
+   wrote the priority on the establishing CPU only: the others kept 0xff, which is never
+   signalled. Symptom: `vmstat -i` shows `irq 23` on one CPU only.
+2. **The forwarding CPUs counted nothing.** `tprof` started its counters with
+   low-priority cross-calls, run by each CPU's `xcall` thread (PRI_XCALL). Under
+   forwarding load the EDMA receive workqueue (PRI_SOFTNET) keeps a CPU 100% busy and
+   the `xcall` thread never runs there, so the counters stayed at their reset value.
+   Found by having the driver program a counter of its own around `edma_rx()`: it
+   counted 99% of the cycles while tprof's counter 0 did not move.
+
+Remaining caveat: the PMU interrupt still arrives late in parts of the receive path, so
+samples there are fewer than the cycle count implies and some land on `splx`.
+
+What the first profiles showed (4 flows): about 40% of the samples are softnet threads
+spinning in `mutex_enter`: `ipflow_fastforward()` holds the global `ipflow_lock` across
+the whole forward, `if_output_lock()` included, so the fast path forwards one packet at
+a time however many CPUs receive.
