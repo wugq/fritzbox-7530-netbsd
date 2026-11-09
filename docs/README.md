@@ -19,17 +19,20 @@ on the router (NetBSD or OpenWrt), `(FRITZ7530) #` at the U-Boot prompt.
 
 ## Part II. How It Works
 
-5. [Building from Source and Testing](05-building-and-testing.md)
+5. [The Hardware](05-the-hardware.md)
+   - the board; the IPQ4019 system-on-chip; the Cortex-A7 and how it compares; the memory
+     map; which driver serves which hardware block
+6. [Building from Source and Testing](06-building-and-testing.md)
    - the repository over NetBSD's tree; the device tree; building; booting from TFTP and a
      USB stick; the test bench
-6. [How the Drivers Work](06-how-the-drivers-work.md)
+7. [How the Drivers Work](07-how-the-drivers-work.md)
    - the NetBSD driver pattern; platform and SMP; serial; clocks and resets; USB; GPIO;
      Ethernet; the switch
-7. [The Board Kernel Configuration](07-board-kernel-configuration.md)
+8. [The Board Kernel Configuration](08-board-kernel-configuration.md)
    - `FRITZ7530`; hidden dependencies; profiling with `tprof`
-8. [How the Flash Edition Works](08-how-the-flash-edition-works.md)
+9. [How the Flash Edition Works](09-how-the-flash-edition-works.md)
    - booting from the NAND; the image; the root file system; the boot script; settings
-9. [NAND and UBI](09-nand-and-ubi.md)
+10. [NAND and UBI](10-nand-and-ubi.md)
    - the QPIC controller without DMA; page layout and ECC; UBI
 
 ## Articles

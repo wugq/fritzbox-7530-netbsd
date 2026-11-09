@@ -332,7 +332,7 @@ window**, and recheck every assumption made before it.
 ## References
 
 - `sys/arch/arm/qcom/ipq4019_edma.c`: `edma_intr()`, `edma_rx_work()`, `edma_tick()`
-- [Chapter 6, section 6.8, Ethernet](../06-how-the-drivers-work.md#68-ethernet-ipq4019_edmac-qcomipq4019-ess-edma):
+- [Chapter 6, section 6.8, Ethernet](../07-how-the-drivers-work.md#78-ethernet-ipq4019_edmac-qcomipq4019-ess-edma):
   the driver as a whole
 - NetBSD manual pages: `workqueue(9)`, `heartbeat(9)`, `queue(3)` (the intrusive lists)
 - J. Mogul and K. K. Ramakrishnan, *Eliminating Receive Livelock in an Interrupt-Driven

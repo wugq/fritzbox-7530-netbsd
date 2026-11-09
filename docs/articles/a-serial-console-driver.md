@@ -231,7 +231,7 @@ dies while holding it, a panic message on another CPU must still get out.
 ## References
 
 - `sys/arch/arm/qcom/qcom_uart.c`
-- [Section 6.4, Serial Console](../06-how-the-drivers-work.md#64-serial-console-qcom_uartc-qcommsm-uartdm-v14)
+- [Section 7.4, Serial Console](../07-how-the-drivers-work.md#74-serial-console-qcom_uartc-qcommsm-uartdm-v14)
 - FreeBSD: `sys/arm/qualcomm/uart_dev_msm.c` (single-character mode)
 - Linux: `drivers/tty/serial/msm_serial.c`
 - NetBSD: `sys/kern/tty.c` (`ttwrite()`, `ttstart()`, `tty_lock`), `sys/kern/tty_subr.c`

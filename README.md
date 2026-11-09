@@ -17,12 +17,15 @@ The [Handbook](docs/README.md) has two parts:
   [release](../../releases), configuring the router, updating and recovery. Start with
   [Chapter 1](docs/01-installing-uboot.md). You need a 3.3 V USB serial adapter and a Linux PC with a
   wired port.
-- **Part II, How It Works**: building from source, the drivers, the kernel
-  configuration, the flash edition, NAND and UBI.
+- **Part II, How It Works**: the hardware and which driver serves each part, building
+  from source, the drivers, the kernel configuration, the flash edition, NAND and UBI.
 - **Articles**: case studies of the hard problems, with the investigation and the
   machinery behind them, e.g. [profiling packet forwarding](docs/articles/profiling-packet-forwarding-with-tprof.md).
 
 ## What works
+
+Every hardware block with its driver and where the driver comes from:
+[Section 5.7](docs/05-the-hardware.md#57-hardware-and-drivers).
 
 | | |
 |---|---|
@@ -52,7 +55,7 @@ KERNEL=FRITZ7530_FLASH tools/build.sh  # the flash edition kernel
 SETS=1 tools/mkflash.sh                # the flash edition image, tftp/netbsd-flash.itb
 ```
 
-Details in [Chapter 5](docs/05-building-and-testing.md). The GitHub Actions workflow
+Details in [Chapter 6](docs/06-building-and-testing.md). The GitHub Actions workflow
 (`.github/workflows/build.yml`) builds the same images on every push and publishes them
 as a release for every `v*` tag.
 

@@ -271,7 +271,7 @@ That last number is where [the tprof article](profiling-packet-forwarding-with-t
 ## References
 
 - `sys/arch/arm/qcom/ipq4019_edma.c`: `edma_rx()`, the transmit path, `hw.qcomedma0.prof`
-- [Section 6.8, Ethernet](../06-how-the-drivers-work.md#68-ethernet-ipq4019_edmac-qcomipq4019-ess-edma)
-  and [Section 6.9, Switch](../06-how-the-drivers-work.md#69-switch-ipq4019_essc-qcaipq4019-qca8337n)
+- [Section 7.8, Ethernet](../07-how-the-drivers-work.md#78-ethernet-ipq4019_edmac-qcomipq4019-ess-edma)
+  and [Section 7.9, Switch](../07-how-the-drivers-work.md#79-switch-ipq4019_essc-qcaipq4019-qca8337n)
 - NetBSD manual pages: `bus_dma(9)`, `cpu_counter(9)`, `ifnet(9)` (`if_transmit`)
 - ARM, *Cortex-A7 MPCore Technical Reference Manual*: caches, the performance monitor

@@ -40,7 +40,7 @@ A release ([releases page](../../../releases)) has these files:
 | file | contents |
 |---|---|
 | `netbsd-flash.itb` | the router system: kernel and root file system in one 16 MB image. This is the one to install. |
-| `netbsd-usb-FRITZ7530.itb` | a kernel whose root file system is on a USB stick, for development ([Chapter 5](05-building-and-testing.md)) |
+| `netbsd-usb-FRITZ7530.itb` | a kernel whose root file system is on a USB stick, for development ([Chapter 6](06-building-and-testing.md)) |
 | `SHA256` | checksums |
 
 Check the download:

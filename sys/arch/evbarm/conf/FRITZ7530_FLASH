@@ -1,7 +1,7 @@
 #	$NetBSD$
 #
 #	FRITZ7530_FLASH -- the FRITZ7530 kernel with its root file system
-#	inside: the flash edition (docs/08-how-the-flash-edition-works.md).
+#	inside: the flash edition (docs/09-how-the-flash-edition-works.md).
 #
 #	The kernel reserves an array for a memory disk (md_root_image);
 #	tools/mkflash.sh fills it with the root image using mdsetimage(8)

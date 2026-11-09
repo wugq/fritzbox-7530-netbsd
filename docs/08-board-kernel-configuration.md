@@ -1,6 +1,6 @@
-# Chapter 7. The Board Kernel Configuration
+# Chapter 8. The Board Kernel Configuration
 
-## 7.1. Synopsis
+## 8.1. Synopsis
 
 GENERIC must boot on every armv7 board NetBSD supports, so it carries a dozen SoCs'
 drivers, displays, sound, PCI, SD cards, hundreds of USB devices... This board uses about
@@ -13,7 +13,7 @@ twenty kinds of device. `FRITZ7530` is a kernel configuration for it alone.
 | object files built | 1747 | 677 |
 
 Functions and speed are the same (all `tools/hwtest.sh` checks pass, routing as fast).
-It is the base of the flash edition ([Chapter 8](08-how-the-flash-edition-works.md)).
+It is the base of the flash edition ([Chapter 9](09-how-the-flash-edition-works.md)).
 
 After reading this chapter, you will know:
 
@@ -23,9 +23,9 @@ After reading this chapter, you will know:
 
 Before reading this chapter, you should:
 
-- have built and booted a kernel ([Chapter 5](05-building-and-testing.md)).
+- have built and booted a kernel ([Chapter 6](06-building-and-testing.md)).
 
-## 7.2. Writing a Board Configuration
+## 8.2. Writing a Board Configuration
 
 NetBSD's habit: GENERIC for all boards, small configurations for specific ones (the
 Raspberry Pi's `RPI`, ...). A configuration is input for `config(1)`:
@@ -50,7 +50,7 @@ needs. What stays and what goes is commented in `sys/arch/evbarm/conf/FRITZ7530`
 - to get something back, copy its line from GENERIC or GENERIC.common (USB network
   adapters, e.g. `ure*`, `axe*`, are in `dev/usb/usbdevices.config`).
 
-## 7.3. What the First Build Revealed
+## 8.3. What the First Build Revealed
 
 A small configuration exposed dependencies GENERIC had hidden:
 
@@ -72,7 +72,7 @@ A small configuration exposed dependencies GENERIC had hidden:
 5. **Undefined `wskbd_input`**: `gpiokeys` reports keys as keyboard events: `wskbd` and
    `wsmux` are needed.
 
-## 7.4. Using It
+## 8.4. Using It
 
 ```
 KERNEL=FRITZ7530 tools/build.sh                    # -> tftp/netbsd-usb-FRITZ7530.itb
@@ -83,7 +83,7 @@ ITB=netbsd-usb-FRITZ7530.itb tools/hwtest.sh "notes"
 Kernels other than GENERIC get their name in the image names, so both kinds can sit in
 the TFTP directory side by side.
 
-## 7.5. Profiling with tprof
+## 8.5. Profiling with tprof
 
 The investigation behind this section, with background on counters, interrupts and
 locks: [Profiling Packet Forwarding with tprof](articles/profiling-packet-forwarding-with-tprof.md).

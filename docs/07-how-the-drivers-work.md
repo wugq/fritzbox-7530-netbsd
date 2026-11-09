@@ -1,6 +1,6 @@
-# Chapter 6. How the Drivers Work
+# Chapter 7. How the Drivers Work
 
-## 6.1. Synopsis
+## 7.1. Synopsis
 
 First the patterns every NetBSD driver follows, then each driver. Keep this open next to
 the code in `sys/arch/arm/qcom/`.
@@ -18,10 +18,10 @@ After reading this chapter, you will know:
 
 Before reading this chapter, you should:
 
-- have read [Chapter 5](05-building-and-testing.md), at least how the code is organised and the device tree;
+- have read [Chapter 6](06-building-and-testing.md), at least how the code is organised and the device tree;
 - be able to read C.
 
-## 6.2. The NetBSD Driver Pattern
+## 7.2. The NetBSD Driver Pattern
 
 ### From the device tree to a driver
 
@@ -67,9 +67,9 @@ driver's state.
 ### Building it in
 
 `files.qcom` declares devices and source files; a kernel configuration line
-`xxx* at fdt?` attaches them (see [Chapter 5](05-building-and-testing.md)).
+`xxx* at fdt?` attaches them (see [Chapter 6](06-building-and-testing.md)).
 
-## 6.3. Platform Code: `ipq4019_platform.c`
+## 7.3. Platform Code: `ipq4019_platform.c`
 
 Before any driver exists, the kernel needs the SoC's basics, registered with
 `FDT_PLATFORM(ipq4019, "qcom,ipq4019", &ipq4019_platform)` and picked when the device
@@ -98,7 +98,7 @@ name with `ARM_CPU_METHOD`, `cpu_enable_qcom_kpss_acc_v2()`. Following Linux's
    core stays dead. A value must also go into the **L2 cache's SAW** (not the CPU's own).
 3. **sends an SGI** to wake the core waiting in WFI so it reads its start address.
 
-## 6.4. Serial Console: `qcom_uart.c` (`qcom,msm-uartdm-v1.4`)
+## 7.4. Serial Console: `qcom_uart.c` (`qcom,msm-uartdm-v1.4`)
 
 Qualcomm's UARTDM is not a 16550. The driver is interrupt driven: receive as FreeBSD's
 `uart_dev_msm.c`, transmit as Linux's `msm_serial.c`.
@@ -160,7 +160,7 @@ in case an interrupt is ever lost.
 | a 256 / 1000-character line in one burst | console dead, power-off needed | received and executed |
 | `jot 5000` | works (busy wait per character) | 5000 lines, complete and in order, 2.7 s (line rate ~2.1 s) |
 
-## 6.5. Reset, Watchdog, Clocks, Random Numbers
+## 7.5. Reset, Watchdog, Clocks, Random Numbers
 
 ### `qcom_pshold.c` (`qcom,pshold`)
 
@@ -235,7 +235,7 @@ from `PRNG_DATA_OUT`. Set-up from FreeBSD's `qcom_rnd`, the entropy glue as NetB
 `meson_rng.c`. Its clock (`GCC_PRNG_AHB_CLK`) is enabled through the GCC first: reading a
 peripheral whose clock is off can hang the bus. Result: `entropy: ready` at attach.
 
-## 6.6. USB: `qcom_dwc3.c` and `qcom_usbphy.c`
+## 7.6. USB: `qcom_dwc3.c` and `qcom_usbphy.c`
 
 The USB 3 controller is a Synopsys DWC3, which NetBSD supports (`dwc3_fdt` + `xhci`). On
 Qualcomm chips the device tree wraps it in a glue node:
@@ -259,7 +259,7 @@ Two more things are needed:
 
 Before these drivers, both had to be poked from U-Boot with `mw.l`.
 
-## 6.7. GPIO: `qcom_tlmm.c` (`qcom,ipq4019-pinctrl`)
+## 7.7. GPIO: `qcom_tlmm.c` (`qcom,ipq4019-pinctrl`)
 
 The TLMM owns the chip's 100 pins, each with a 4 KB register page: `+0` configuration
 (function, pull, drive strength, output enable), `+4` level (bit 0 input, bit 1 output).
@@ -282,7 +282,7 @@ The driver provides:
 Pin function selection is not implemented (the firmware set it up), nor GPIO interrupts
 (polling is enough for buttons).
 
-## 6.8. Ethernet: `ipq4019_edma.c` (`qcom,ipq4019-ess-edma`)
+## 7.8. Ethernet: `ipq4019_edma.c` (`qcom,ipq4019-ess-edma`)
 
 The biggest driver, and the most worth reading.
 
@@ -391,7 +391,7 @@ Each design point is a lesson:
 | `sysctl hw.qcomedma0.prof=1` | print and clear per-CPU cycle accounting: RX, TX, lock waits |
 | `sysctl hw.qcomedma0.rss_type` | which headers the RSS hash covers |
 
-## 6.9. Switch: `ipq4019_ess.c` (`qca,ipq4019-qca8337n`)
+## 7.9. Switch: `ipq4019_ess.c` (`qca,ipq4019-qca8337n`)
 
 Written after FreeBSD's `ar40xx(4)`. The EDMA driver handles the DMA engine; everything
 on the switch and PHY side is here.

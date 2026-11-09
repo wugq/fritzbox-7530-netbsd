@@ -146,5 +146,5 @@ Only then: what changed in the software?
 ## References
 
 - [Section 1.3, Connecting the Serial Console](../01-installing-uboot.md#13-connecting-the-serial-console)
-- [Section 5.6, Automation](../05-building-and-testing.md#56-automation): `nb-cycle.sh`,
+- [Section 6.6, Automation](../06-building-and-testing.md#66-automation): `nb-cycle.sh`,
   `serial-log.sh`

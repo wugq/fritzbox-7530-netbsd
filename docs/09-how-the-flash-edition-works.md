@@ -1,6 +1,6 @@
-# Chapter 8. How the Flash Edition Works
+# Chapter 9. How the Flash Edition Works
 
-## 8.1. Synopsis
+## 9.1. Synopsis
 
 The flash edition is the NetBSD system that runs from the router's own flash and works as
 a router without a PC: the `netbsd-flash.itb` image of a release. Installing and using
@@ -17,9 +17,9 @@ After reading this chapter, you will know:
 Before reading this chapter, you should:
 
 - know how the system is used ([Chapter 2](02-installing-netbsd.md), [Chapter 3](03-configuring-the-router.md));
-- know the board kernel configuration ([Chapter 7](07-board-kernel-configuration.md)).
+- know the board kernel configuration ([Chapter 8](08-board-kernel-configuration.md)).
 
-## 8.2. Booting from the NAND without Changing U-Boot
+## 9.2. Booting from the NAND without Changing U-Boot
 
 U-Boot, as OpenWrt installs it, boots like this (`printenv`):
 
@@ -56,14 +56,14 @@ The UBI volumes with OpenWrt and NetBSD installed:
 
 OpenWrt's writable overlay `rootfs_data` (81 MB) is removed to make room.
 
-## 8.3. The Image: One Gzipped Kernel with the Root File System Inside
+## 9.3. The Image: One Gzipped Kernel with the Root File System Inside
 
 When the flash edition was made, NetBSD had no driver for the IPQ4019's NAND controller,
 so the root file system could not live in the NAND. It is a **memory disk inside the
 kernel**, the way NetBSD's installation kernels do it. (A NAND driver came later, see
-[Chapter 9](09-nand-and-ubi.md); it is used for the settings, the root stays in RAM.)
+[Chapter 10](10-nand-and-ubi.md); it is used for the settings, the root stays in RAM.)
 
-- `FRITZ7530_FLASH` is the board kernel `FRITZ7530` ([Chapter 7](07-board-kernel-configuration.md))
+- `FRITZ7530_FLASH` is the board kernel `FRITZ7530` ([Chapter 8](08-board-kernel-configuration.md))
   with `MEMORY_DISK_IS_ROOT` and `MEMORY_DISK_ROOT_SIZE=81920`: a 40 MB array
   `md_root_image` in the kernel.
 - `tools/mkflash.sh` fills the array with the root image (`mdsetimage -s`), turns the
@@ -86,7 +86,7 @@ SETS=1 AUTHORIZED_KEYS=~/.ssh/id_ed25519.pub tools/mkflash.sh  # with your ssh k
 ITB=netbsd-flash.itb tools/nb-cycle.sh                          # boot it from RAM (TFTP)
 ```
 
-## 8.4. The Root File System
+## 9.4. The Root File System
 
 It is NetBSD 11.1's own userland, a selection of about 230 files:
 
@@ -104,7 +104,7 @@ The largest parts are libcrypto (5 MB, for ssh), the DHCP server (3.4 MB) and li
 makes them at the first boot), no password, no authorized ssh keys unless
 `AUTHORIZED_KEYS` is given to a local build.
 
-## 8.5. The Boot Script
+## 9.5. The Boot Script
 
 NetBSD's full system starts services with `rc.subr` and the scripts in `/etc/rc.d`. The
 flash edition has one `/etc/rc` that does the same jobs in order, so the whole boot can be
@@ -114,16 +114,16 @@ read in one page:
    `procfs`), light the info LED red;
 2. restore the saved settings (below) and read `/etc/router.conf`;
 3. network: the LAN on `qcomedma0`; the WAN port as `vlan2` (the switch tags it, see
-   [Chapter 6](06-how-the-drivers-work.md#vlans-and-a-wan-port)) with a static address, `dhcpcd` or
+   [Chapter 7](07-how-the-drivers-work.md#vlans-and-a-wan-port)) with a static address, `dhcpcd` or
    `pppoe0`; IPv6 on the LAN with `rtadvd`;
 4. services by option: `npf` (NAT), `dhcpd`, `unbound`, `ntpd`; always `syslogd`,
    `sshd` (host keys made if missing), `powerd` (buttons);
 5. info LED green.
 
-## 8.6. How Settings Are Kept
+## 9.6. How Settings Are Kept
 
 `saveconfig` writes the files listed in `/etc/saveconfig.list` as a tar archive into
-the UBI volume `config`, through the NAND driver ([Chapter 9](09-nand-and-ubi.md#settings-in-config)).
+the UBI volume `config`, through the NAND driver ([Chapter 10](10-nand-and-ubi.md#settings-in-config)).
 It writes whole LEBs (124 KB) at a time, so each save is one flash update per LEB.
 
 At boot, `/etc/rc`:
@@ -146,7 +146,7 @@ saved before an option existed keeps working.
 the `config` volume's device numbers in the boot messages (the driver prints them) and
 makes `/dev/ubivolN`.
 
-## 8.7. Services
+## 9.7. Services
 
 - **NAT** (`npf.conf`): masquerading on `vlan2` or `pppoe0`; on `pppoe0` the TCP MSS is
   clamped to 1452, since PPPoE's MTU is 1492 and LAN hosts send 1500-byte packets.
@@ -167,7 +167,7 @@ makes `/dev/ubivolN`.
   to `/var/log/authlog`, errors also to the console. Without a `syslog.conf`, syslogd
   drops everything.
 
-## 8.8. Pitfalls
+## 9.8. Pitfalls
 
 - **`ubi read` without a size reads the whole volume.** With a 48 MB volume it ran from
   0x85000000 to 0x88013000 and overwrote U-Boot itself (it sits between about 0x875F0000

@@ -494,7 +494,7 @@ The path this investigation took, generalized:
 
 - Patches: `patches/0005-arm-gic-banked-ppi-priority.diff`,
   `patches/0006-tprof-highpri-xcalls.diff`, `patches/0007-ipflow-send-unlocked.diff`
-- [Section 7.5, Profiling with tprof](../07-board-kernel-configuration.md#75-profiling-with-tprof):
+- [Section 8.5, Profiling with tprof](../08-board-kernel-configuration.md#85-profiling-with-tprof):
   the commands
 - NetBSD manual pages: `tprof(8)`, `xcall(9)`, `mutex(9)`, `psref(9)`, `workqueue(9)`,
   `spl(9)`

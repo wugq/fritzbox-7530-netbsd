@@ -123,7 +123,7 @@ enables. Restoring that register fixed both.
 
 Later the switch driver was rewritten to configure everything from scratch, following
 FreeBSD's `ar40xx` driver, and the snapshot was dropped. The table of what it sets is in
-[Section 6.9](../06-how-the-drivers-work.md#69-switch-ipq4019_essc-qcaipq4019-qca8337n).
+[Section 7.9](../07-how-the-drivers-work.md#79-switch-ipq4019_essc-qcaipq4019-qca8337n).
 
 > [!TIP]
 > A value that is exactly zero, or exactly some reset value, is information. Here it
@@ -208,7 +208,7 @@ The reset also clears U-Boot's page and ECC configuration. That configuration wa
 **known to work** with this chip, so the driver saves those registers before the reset
 and writes them back after. This is the snapshot idea of section 4 again, but narrowed
 to a list of registers that are understood. Details in
-[Chapter 9](../09-nand-and-ubi.md).
+[Chapter 10](../10-nand-and-ubi.md).
 
 ## 7. Overwriting the Boot Loader in Memory
 
@@ -255,8 +255,8 @@ writing goes to 0x89000000, above U-Boot, not to 0x88000000.
 
 - `sys/arch/arm/qcom/ipq4019_ess.c` (switch, ESS reset, MDIO),
   `sys/arch/arm/qcom/ipq4019_edma.c` (rings), `sys/arch/arm/qcom/qcom_qpic.c` (QPIC reset)
-- [Section 6.9, Switch](../06-how-the-drivers-work.md#69-switch-ipq4019_essc-qcaipq4019-qca8337n),
-  [Chapter 9, NAND and UBI](../09-nand-and-ubi.md),
-  [Section 8.8, Pitfalls](../08-how-the-flash-edition-works.md#88-pitfalls)
+- [Section 7.9, Switch](../07-how-the-drivers-work.md#79-switch-ipq4019_essc-qcaipq4019-qca8337n),
+  [Chapter 9, NAND and UBI](../10-nand-and-ubi.md),
+  [Section 9.8, Pitfalls](../09-how-the-flash-edition-works.md#98-pitfalls)
 - FreeBSD: `sys/dev/etherswitch/ar40xx/` (`ar40xx_hw_malibu_psgmii_ess_reset()`)
 - Linux: `drivers/mtd/nand/raw/qcom_nandc.c` (the BAM mode comment)
