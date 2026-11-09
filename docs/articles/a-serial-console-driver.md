@@ -19,7 +19,7 @@ its queues between CPUs, and why a crash report often points at the victim rathe
 the culprit.
 
 What you should know: threads and locks from any language. [Receiving Packets without
-Drowning](receiving-packets.md), sections 1.2 and 2, covers interrupts and contexts.
+Drowning](receiving-packets-without-drowning.md), sections 1.2 and 2, covers interrupts and contexts.
 
 ## 1. Background: a UART
 
@@ -64,7 +64,7 @@ when data is waiting and no stale event has come.
 
 (The reason for the change was a "deaf console" under network load. That turned out to
 be a bug in the Ethernet driver, see [Receiving Packets without
-Drowning](receiving-packets.md#5-the-half-dead-router-work-queued-twice). The
+Drowning](receiving-packets-without-drowning.md#5-the-half-dead-router-work-queued-twice). The
 serial driver had been changed without evidence; the change made things worse.)
 
 ## 3. The 256-Character Wall
@@ -134,7 +134,7 @@ character arrives → interrupt → qcom_uart_intr():   drain the FIFO into a 1 
 Two reasons:
 
 - the hardware interrupt must be short (the general rule, see [Receiving Packets without
-  Drowning](receiving-packets.md#34-fix-do-little-in-the-interrupt));
+  Drowning](receiving-packets-without-drowning.md#34-fix-do-little-in-the-interrupt));
 - the terminal layer may not be called at the UART's interrupt priority (`IPL_SERIAL`),
   because it takes locks that code at lower priorities also takes. Being interrupted
   while holding such a lock, by code that wants the same lock, would deadlock the CPU.

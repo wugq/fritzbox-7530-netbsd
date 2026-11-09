@@ -17,7 +17,7 @@ too much:
 It ends with a slowdown that looked like a VLAN problem and turned out to be the same
 bottleneck seen through Ethernet flow control.
 
-What you should know: [Receiving Packets without Drowning](receiving-packets.md)
+What you should know: [Receiving Packets without Drowning](receiving-packets-without-drowning.md)
 (descriptor rings, interrupts, the receive thread). Some feeling for "slow" and "fast"
 operations helps; this article gives the numbers.
 
@@ -57,7 +57,7 @@ lock.
 
 This is **instrumentation**: exact, cheap, but limited to the places someone thought of.
 Its counterpart, sampling the whole kernel, is the subject of
-[the tprof article](profiling-forwarding.md); the two together are what found most of
+[the tprof article](profiling-packet-forwarding-with-tprof.md); the two together are what found most of
 the problems below.
 
 ## 3. Transmit at 6,400 Cycles
@@ -117,7 +117,7 @@ written by only one core at a time. When core 1 takes the lock, the line moves t
 1's cache; when core 2 tries next, the line must move to core 2, and so on. Each move
 costs about as much as a trip to memory. Under contention the lock word ping-pongs between
 caches, and every acquisition pays for it, however short the critical section is. (How
-a waiting CPU spins is in [the tprof article, section 6](profiling-forwarding.md#6-background-what-a-mutex-does-on-a-multiprocessor).)
+a waiting CPU spins is in [the tprof article, section 6](profiling-packet-forwarding-with-tprof.md#6-background-what-a-mutex-does-on-a-multiprocessor).)
 
 ### 4.3. Fix
 
@@ -251,7 +251,7 @@ Two more facts closed the case:
   packet**, of which the driver's own measured paths were only about 5,600. Most of the
   time was in the network stack.
 
-That last number is where [the tprof article](profiling-forwarding.md) picks up.
+That last number is where [the tprof article](profiling-packet-forwarding-with-tprof.md) picks up.
 
 ## 8. Lessons
 

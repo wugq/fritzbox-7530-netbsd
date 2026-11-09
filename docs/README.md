@@ -37,10 +37,10 @@ on the router (NetBSD or OpenWrt), `(FRITZ7530) #` at the U-Boot prompt.
 Case studies of problems met during the port: the symptom, the investigation with its
 wrong turns, the cause, the fix, and the machinery behind it. Each stands on its own.
 
-- [Where Do the Cycles Go? Profiling Packet Forwarding with tprof](articles/profiling-forwarding.md)
+- [Profiling Packet Forwarding with tprof: Where Do the Cycles Go?](articles/profiling-packet-forwarding-with-tprof.md)
   - performance counters, interrupt controllers, thread priorities, how a mutex behaves
     on a multiprocessor; two NetBSD bugs and a global lock in the forwarding path
-- [Receiving Packets without Drowning: Interrupts, Threads and a Hang](articles/receiving-packets.md)
+- [Receiving Packets without Drowning: Interrupts, Threads and a Hang](articles/receiving-packets-without-drowning.md)
   - descriptor rings, receive livelock and NAPI, why TCP retransmits reordered packets,
     a work item queued twice
 - [Counting Cycles: Making an Ethernet Driver Fast](articles/counting-cycles.md)
@@ -49,8 +49,8 @@ wrong turns, the cause, the fix, and the machinery behind it. Each stands on its
 - [Inherited Hardware: When the Boot Loader Was There First](articles/inherited-hardware.md)
   - what survives a hand-over, undo versus reset, a serial link that must lock on, the
     NAND controller's DMA mode, overwriting U-Boot in memory
-- [A Serial Console Driver: from Polling to Interrupts](articles/serial-console.md)
+- [A Serial Console Driver: from Polling to Interrupts](articles/a-serial-console-driver.md)
   - FIFOs and watermarks, a 256-character hang, hardware and software interrupts, a race
     on the terminal's queue
-- [When It Is Not the Software: the Test Bench](articles/not-the-software.md)
+- [When It Is Not the Software: the Test Bench](articles/when-it-is-not-the-software.md)
   - back-powering through a serial adapter, loose wires, link downshifts, a checklist

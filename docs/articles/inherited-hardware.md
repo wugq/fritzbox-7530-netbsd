@@ -23,7 +23,7 @@ the general approach: **find out what the previous owner did, then either undo i
 reset and rebuild**.
 
 What you should know: the descriptor rings of [Receiving Packets without
-Drowning](receiving-packets.md), section 1. Basic idea of a register: a memory address
+Drowning](receiving-packets-without-drowning.md), section 1. Basic idea of a register: a memory address
 that controls a device.
 
 ## 1. Background: What Survives a Hand-Over

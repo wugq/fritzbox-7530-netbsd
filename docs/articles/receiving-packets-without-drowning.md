@@ -19,7 +19,7 @@ avoid it, why TCP treats reordering as loss, and what "queued twice" does to a l
 list.
 
 What you should know: threads, locks, and queues from any language. No kernel
-experience is assumed. [The tprof article](profiling-forwarding.md) explains thread
+experience is assumed. [The tprof article](profiling-packet-forwarding-with-tprof.md) explains thread
 priorities and interrupt contexts in more detail; section 2 here repeats the essentials.
 
 ## 1. How a Network Card Hands Packets to the CPU

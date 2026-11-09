@@ -20,7 +20,7 @@ The [Handbook](docs/README.md) has two parts:
 - **Part II, How It Works**: building from source, the drivers, the kernel
   configuration, the flash edition, NAND and UBI.
 - **Articles**: case studies of the hard problems, with the investigation and the
-  machinery behind them, e.g. [profiling packet forwarding](docs/articles/profiling-forwarding.md).
+  machinery behind them, e.g. [profiling packet forwarding](docs/articles/profiling-packet-forwarding-with-tprof.md).
 
 ## What works
 

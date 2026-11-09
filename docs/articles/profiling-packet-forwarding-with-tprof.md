@@ -1,4 +1,4 @@
-# Where Do the Cycles Go? Profiling Packet Forwarding with tprof
+# Profiling Packet Forwarding with tprof: Where Do the Cycles Go?
 
 ## Abstract
 

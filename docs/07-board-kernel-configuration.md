@@ -86,7 +86,7 @@ the TFTP directory side by side.
 ## 7.5. Profiling with tprof
 
 The investigation behind this section, with background on counters, interrupts and
-locks: [Profiling Packet Forwarding with tprof](articles/profiling-forwarding.md).
+locks: [Profiling Packet Forwarding with tprof](articles/profiling-packet-forwarding-with-tprof.md).
 
 The board kernels have `armpmu` and `tprof`, and the flash edition carries `tprof(8)`:
 
