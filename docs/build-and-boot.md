@@ -21,6 +21,8 @@ NetBSD's source tree (`src/`) is not in this repository, only what was added and
     worked on one CPU only and `tprof` sampled one CPU of four.
   - `0006`: `tprof` starts and stops its counters with high-priority cross-calls, so a
     busy network workqueue cannot hold them off (docs/kernel-config.md, "Profiling").
+  - `0007`: `ipflow` (the `GATEWAY` fast path) sends without its global lock, holding the
+    route by a reference instead; 4 forwarded flows no longer queue on one lock.
 
 Why hook into **GENERIC** rather than write a board kernel first? On ARM, NetBSD's idea is
 one kernel for every board: GENERIC carries every SoC's drivers, and what differs between

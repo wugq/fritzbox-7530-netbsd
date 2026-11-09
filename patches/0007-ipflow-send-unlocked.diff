@@ -1,0 +1,87 @@
+ipflow: send without ipflow_lock.  ipflow_fastforward() held the global
+ipflow_lock across if_output_lock(), so the fast path forwarded one
+packet at a time however many CPUs received: with 4 flows on the
+FRITZ!Box 7530 (4 x Cortex-A7) 40% of the samples were softnet threads
+spinning on it.  The flow may be freed once the lock is dropped and its
+route cache's psref is per flow, so hold the route by a reference
+(rt_ref, now exported) and copy the destination; send errors go straight
+to IP_STAT_CANTFORWARD, where ipflow_addstats() would have put them.
+
+diff --git a/sys/net/route.c b/sys/net/route.c
+index 2ce16b738..cae75cdf6 100644
+--- a/sys/net/route.c
++++ b/sys/net/route.c
+@@ -280,7 +280,6 @@ static void rt_maskedcopy(const struct sockaddr *,
+ 
+ static void rtcache_invalidate(void);
+ 
+-static void rt_ref(struct rtentry *);
+ 
+ static struct rtentry *
+     rtalloc1_locked(const struct sockaddr *, int, bool, bool);
+@@ -617,7 +616,7 @@ rtalloc1(const struct sockaddr *dst, int report)
+ 	return rt;
+ }
+ 
+-static void
++void
+ rt_ref(struct rtentry *rt)
+ {
+ 
+diff --git a/sys/net/route.h b/sys/net/route.h
+index 64f934f18..6812d51de 100644
+--- a/sys/net/route.h
++++ b/sys/net/route.h
+@@ -430,6 +430,7 @@ struct rttimer_queue *
+ void	rt_timer_queue_destroy(struct rttimer_queue *);
+ 
+ void	rt_free(struct rtentry *);
++void	rt_ref(struct rtentry *);
+ void	rt_unref(struct rtentry *);
+ 
+ int	rt_update(struct rtentry *, struct rt_addrinfo *, void *);
+diff --git a/sys/netinet/ip_flow.c b/sys/netinet/ip_flow.c
+index bdcaf30c5..e44e7ecbf 100644
+--- a/sys/netinet/ip_flow.c
++++ b/sys/netinet/ip_flow.c
+@@ -204,6 +204,10 @@ ipflow_fastforward(struct mbuf *m)
+ {
+ 	struct ip *ip;
+ 	struct ip ip_store;
++	union {
++		struct sockaddr		sa;
++		struct sockaddr_storage	ss;
++	} dst_store;
+ 	struct ipflow *ipf;
+ 	struct rtentry *rt = NULL;
+ 	const struct sockaddr *dst;
+@@ -350,13 +354,22 @@ ipflow_fastforward(struct mbuf *m)
+ 	else
+ 		dst = rtcache_getdst(&ipf->ipf_ro);
+ 
+-	if ((error = if_output_lock(rt->rt_ifp, rt->rt_ifp, m, dst, rt)) != 0) {
+-		if (error == ENOBUFS)
+-			ipf->ipf_dropped++;
+-		else
+-			ipf->ipf_errors++;
+-	}
+-	ret = 1;
++	/*
++	 * Send without ipflow_lock: it serializes all fast forwarding,
++	 * and if_output is most of the work.  The flow may be freed once
++	 * the lock is dropped and its route cache's psref is per flow, so
++	 * hold the route by a reference instead and copy the destination.
++	 * Errors go straight to the counter ipflow_addstats() feeds.
++	 */
++	sockaddr_copy(&dst_store.sa, sizeof(dst_store), dst);
++	rt_ref(rt);
++	rtcache_unref(rt, &ipf->ipf_ro);
++	mutex_exit(&ipflow_lock);
++	if ((error = if_output_lock(rt->rt_ifp, rt->rt_ifp, m, &dst_store.sa,
++	    rt)) != 0)
++		IP_STATINC(IP_STAT_CANTFORWARD);
++	rt_unref(rt);
++	return 1;
+ out_unref:
+ 	rtcache_unref(rt, &ipf->ipf_ro);
+ out:

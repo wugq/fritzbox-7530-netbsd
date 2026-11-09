@@ -104,3 +104,15 @@ What the first profiles showed (4 flows): about 40% of the samples are softnet t
 spinning in `mutex_enter`: `ipflow_fastforward()` holds the global `ipflow_lock` across
 the whole forward, `if_output_lock()` included, so the fast path forwards one packet at
 a time however many CPUs receive.
+
+Patch 0007 sends without the lock (the route is held by a reference, the destination
+copied, since the flow may be freed once the lock is dropped). With 4 flows:
+
+| | before | patch 0007 |
+|---|---|---|
+| throughput | 816 Mbit/s | 914 Mbit/s (line rate) |
+| cycles, 4 CPUs, 8 s | 16.2 G | 12.9 G |
+| cycles per Mbit/s | 19.9 M | 14.1 M (-29%) |
+| samples spinning on a lock | 39% | 4% |
+
+hwtest: all checks pass; LAN to WAN (vlan2) 1 flow 563 -> 626, 4 flows 818 -> 914 Mbit/s.
