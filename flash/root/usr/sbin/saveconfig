@@ -5,6 +5,9 @@
 # The root file system is a memory disk: changes are lost at reboot.  This
 # saves the files listed in /etc/saveconfig.list into the NAND (the UBI
 # volume "config", as a tar archive); /etc/rc restores them at boot.
+# Files that are the same as the image's copy (in /var/run/image) are left
+# out, so that a newer image's version of them is not hidden by an old one;
+# with none left, the saved settings are cleared.
 #
 #   saveconfig        save to the NAND
 #   saveconfig -u     save to /fritz/ on a USB stick instead
@@ -20,13 +23,16 @@ case "$1" in
 *)	echo "usage: saveconfig [-u | -n]" >&2; exit 2 ;;
 esac
 
-# the files that exist, relative to / (tar members without a leading /)
-files=$(grep -v '^#' /etc/saveconfig.list | grep -v '^$' |
-    while read -r f; do [ -e "$f" ] && echo "${f#/}"; done)
+# the files that differ from the image's, relative to / (tar members
+# without a leading /)
+files=$(changed_settings | sed "s,^/,," | tr "\n" " ")
+same=$(for f in $(settings_files); do
+	case " $files " in *" $f "*) ;; *) echo "$f" ;; esac; done)
 
 case $mode in
 dry)
 	for f in $files; do echo "would save /$f"; done
+	for f in $same; do echo "same as the image: /$f"; done
 	;;
 nand)
 	if ! config_vol; then
@@ -34,7 +40,12 @@ nand)
 		exit 1
 	fi
 	tar=/tmp/saveconfig.tar
-	(cd / && pax -w -x ustar $files) > $tar || exit 1
+	if [ -n "$files" ]; then
+		(cd / && pax -w -x ustar $files) > $tar || exit 1
+	else
+		# nothing to keep: no tar header, so /etc/rc restores nothing
+		dd if=/dev/zero bs=512 count=1 of=$tar 2>/dev/null
+	fi
 	size=$(wc -c < $tar | tr -d " ")
 	if [ "$size" -gt 253952 ]; then
 		echo "saveconfig: $size bytes, more than the volume holds" >&2
@@ -54,6 +65,7 @@ usb)
 		echo "saveconfig: no USB stick (sd0a/sd0e/sd0i) found" >&2
 		exit 1
 	fi
+	rm -rf /mnt/fritz
 	for f in $files; do
 		mkdir -p "/mnt/fritz/${f%/*}"
 		cp -p "/$f" "/mnt/fritz/$f" && echo "saved /$f"

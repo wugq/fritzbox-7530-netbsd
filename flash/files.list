@@ -27,6 +27,7 @@
 /usr/bin/pgrep
 /usr/bin/pkill
 /usr/bin/logger
+/usr/bin/cmp
 /bin/pwd
 /bin/rm
 /bin/rmdir

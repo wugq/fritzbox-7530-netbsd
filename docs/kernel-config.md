@@ -1,4 +1,4 @@
-# Step 5: a kernel configuration for this board (`FRITZ7530`)
+# The board kernel configuration (`FRITZ7530`)
 
 GENERIC must boot on every armv7 board NetBSD supports, so it carries a dozen SoCs'
 drivers, displays, sound, PCI, SD cards, hundreds of USB devices... This board uses about

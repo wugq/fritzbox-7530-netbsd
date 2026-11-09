@@ -33,6 +33,11 @@ dmesg > /var/run/dmesg.boot
 # otherwise from /fritz/ on a USB stick (FFS or FAT): they replace the
 # image's copies.  USB attaches after the kernel has mounted the root, so
 # wait a few seconds for a disk to show up.
+#
+# First keep the image's own copies in /var/run/image: saveconfig leaves
+# out the files that are the same as these, so a newer image's version of
+# a file the owner never changed is not hidden by an old saved copy.
+image_copies
 if config_vol && config_has_settings; then
 	echo "flash edition: settings from the NAND ($CONFIG_DEV)"
 	(cd / && dd if=$CONFIG_DEV bs=126976 2>/dev/null | pax -r -pe)
@@ -49,6 +54,9 @@ else
 		umount /mnt
 	fi
 fi
+changed=$(for f in $(changed_settings); do
+	[ -e /var/run/image$f ] && echo $f; done)
+[ -z "$changed" ] || echo "flash edition: saved, not the image's:" $changed
 
 . /etc/router.conf
 hostname "$HOSTNAME"

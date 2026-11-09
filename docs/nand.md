@@ -1,4 +1,4 @@
-# Step 7: NAND and UBI from NetBSD
+# NAND and UBI from NetBSD
 
 Goal: NetBSD reads the NAND and keeps its settings in a small UBI volume, so the flash
 edition needs no USB stick. Neither NetBSD nor FreeBSD has a driver for the IPQ4019's

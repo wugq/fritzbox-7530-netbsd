@@ -1,61 +1,67 @@
 # NetBSD on the AVM FRITZ!Box 7530
 
-A learning port of NetBSD 11 to the AVM FRITZ!Box 7530, a router built around the
-Qualcomm IPQ4019 (four Cortex-A7 cores at 716 MHz, 256 MB RAM, 128 MB NAND, a 5-port
-gigabit switch). The goal was a NetBSD that does roughly what OpenWrt does on this box
-(DSL and WiFi aside), and to understand every piece on the way: the drivers are written
-from the hardware's register descriptions, with Linux and FreeBSD drivers read for
-reference, and each one is explained in [docs/](docs/).
+A port of NetBSD 11 to the AVM FRITZ!Box 7530, a home router built around the Qualcomm
+IPQ4019 (four Cortex-A7 cores at 716 MHz, 256 MB RAM, 128 MB NAND, a 5-port gigabit
+switch). The result is a NetBSD that runs from the router's flash and works as a router:
+NAT, DHCP, DNS, IPv6 on the LAN, PPPoE, ssh. WiFi and DSL are not supported.
 
-It is not an upstream submission. The repository is an overlay on the NetBSD source tree:
-new files under `sys/` (same paths as in NetBSD's `src/sys`), a few small patches to stock
-files in `patches/`, and scripts that fetch `netbsd-11`, apply both and build.
+It is a learning project: every driver was written for this port, from the hardware's
+register descriptions with Linux and FreeBSD drivers read for reference, and the
+documents explain each piece. It is not an upstream NetBSD submission.
+
+## Using it
+
+Download `netbsd-flash.itb` from the [releases](../../releases) and follow
+**[docs/install.md](docs/install.md)**: installing U-Boot, trying NetBSD from RAM,
+installing it into the flash, setting it up, updating and going back. You need a 3.3 V
+USB serial adapter and a Linux PC with a wired port.
+
+## How it works
+
+Read in this order; each document stands on the ones before it.
+
+| | |
+|---|---|
+| [docs/uboot.md](docs/uboot.md) | how the 7530 boots, and installing U-Boot |
+| [docs/build-and-boot.md](docs/build-and-boot.md) | building from source, how the code is laid out over NetBSD's tree, booting over TFTP, the test bench |
+| [docs/drivers.md](docs/drivers.md) | the NetBSD driver pattern, then every driver: platform and SMP, serial, clocks, USB, GPIO, Ethernet, switch |
+| [docs/kernel-config.md](docs/kernel-config.md) | `FRITZ7530`, a kernel configuration for this board alone (3.9 MB instead of 10.2 MB); profiling with `tprof` |
+| [docs/flash-edition.md](docs/flash-edition.md) | the system in the flash: the image, the root file system, the boot script, how settings are kept |
+| [docs/nand.md](docs/nand.md) | the NAND controller and UBI, written for NetBSD |
 
 ## What works
 
 | | |
 |---|---|
 | 4 cores (SMP), GIC, generic timer, 256 MB | `ipq4019_platform.c`; secondary cores started through the secure monitor (SCM) |
-| Serial console | `qcom_uart.c`: UARTDM, interrupt driven (RX in single-character mode, batched TX) |
+| Serial console | `qcom_uart.c`: UARTDM, interrupt driven |
 | Reboot, watchdog | `qcom_pshold.c` (PS_HOLD), `qcom_wdt.c` (KPSS watchdog) |
-| Clocks and resets, CPU frequency | `qcom_gcc.c`: all resets, 43 clock gates, the CPU clock (48/200/500/716 MHz via `cpufreqdt`) |
-| GPIO, buttons, LEDs | `qcom_tlmm.c`; NetBSD's `gpiokeys` (buttons to `powerd`) and `gpioleds` (`sysctl hw.led`) |
+| Clocks and resets, CPU frequency | `qcom_gcc.c`: resets, 43 clock gates, the CPU clock (48/200/500/716 MHz via `cpufreqdt`) |
+| GPIO, buttons, LEDs | `qcom_tlmm.c`; NetBSD's `gpiokeys` (buttons to `powerd`) and `gpioleds` |
 | Hardware random numbers | `qcom_rng.c` |
 | USB 3 | NetBSD's `dwc3`/`xhci`/`umass` with `qcom_dwc3.c` (glue) and `qcom_usbphy.c` |
-| Ethernet | `ipq4019_edma.c`: the ESS EDMA engine, 4 RSS receive queues on 4 CPUs, 4 transmit queues, zero copy, checksum offload, hardware VLAN tagging |
-| Switch | `ipq4019_ess.c`: ESS reset that keeps the PSGMII link aligned, switch set up from scratch, link state, MIB counters, one port as WAN through 802.1Q |
-| NAND | `qpic_nand.c` + `dev/ubi/ubi_lite.c`: the QPIC controller driven by register writes, UBI volumes as character devices; the volume `config` is writable and keeps the settings |
-| Flash edition | NetBSD boots from the NAND (a UBI volume U-Boot already knows) and keeps its settings there: no PC or USB stick needed |
+| Ethernet | `ipq4019_edma.c`: the ESS EDMA engine, 4 receive queues on 4 CPUs (RSS), 4 transmit queues, checksum offload, hardware VLAN tagging |
+| Switch | `ipq4019_ess.c`: reset, set-up from scratch, link state, MIB counters, one port as WAN through 802.1Q |
+| NAND | `qpic_nand.c` + `dev/ubi/ubi_lite.c`: UBI volumes as character devices; the settings are kept in one |
 
-Routing between two switch ports (iperf3): about 590 Mbit/s with one TCP flow and
-800-900 Mbit/s with four or eight; stock OpenWrt on the same box does 599 and about 930.
+Routing between two switch ports (iperf3, TCP): about 600 Mbit/s with one flow and
+900 Mbit/s (line rate) with four. OpenWrt on the same box does 599 and about 930.
 
-Not done: DSL (not wanted), WiFi (NetBSD's 802.11 stack lacks 802.11n/ac; to be tried on
-FreeBSD), one network interface per switch port (DSA).
+Not done: WiFi (NetBSD's 802.11 stack lacks 802.11n/ac), DSL, DECT, one network
+interface per switch port (Linux's DSA).
 
-## Steps
-
-| | | |
-|---|---|---|
-| 0 | Install U-Boot (through OpenWrt's installation method) | [docs/uboot.md](docs/uboot.md) |
-| 1 | Build NetBSD, boot it over TFTP, root on a USB stick; test bench and automated tests | [docs/build-and-boot.md](docs/build-and-boot.md) |
-| 2-3 | The drivers, one by one | [docs/drivers.md](docs/drivers.md) |
-| 5 | `FRITZ7530`, a kernel configuration for this board (3.9 MB instead of 10.2 MB) | [docs/kernel-config.md](docs/kernel-config.md) |
-| 6 | The flash edition: kernel and root file system in one 14.5 MB image in a UBI volume | [docs/flash-edition.md](docs/flash-edition.md) |
-| 7 | NAND and UBI from NetBSD | [docs/nand.md](docs/nand.md) |
-
-## Quick start
+## Building
 
 ```
-tools/build.sh                         # GENERIC kernel, tftp/netbsd*.itb (first run: toolchain, ~20 min)
-KERNEL=FRITZ7530 tools/build.sh        # the small board kernel
-KERNEL=FRITZ7530_FLASH tools/build.sh  # the flash edition kernel (see docs/flash-edition.md)
+tools/build.sh                         # GENERIC kernel (first run: NetBSD source and toolchain, ~20 min)
+KERNEL=FRITZ7530 tools/build.sh        # the board kernel, root on a USB stick
+KERNEL=FRITZ7530_FLASH tools/build.sh  # the flash edition kernel
+SETS=1 tools/mkflash.sh                # the flash edition image, tftp/netbsd-flash.itb
 ```
 
-The GitHub Actions workflow (`.github/workflows/build.yml`) builds the same images,
-including the flash edition, and attaches them to the run.
-
-Booting needs the U-Boot of step 0 and a serial console (3.3 V, 115200 8N1).
+Details in [docs/build-and-boot.md](docs/build-and-boot.md). The GitHub Actions workflow
+(`.github/workflows/build.yml`) builds the same images on every push and publishes them
+as a release for every `v*` tag.
 
 ## Layout
 
@@ -65,8 +71,8 @@ Booting needs the U-Boot of step 0 and a serial console (3.3 V, 115200 8N1).
 | `patches/` | changes to stock NetBSD files |
 | `flash/` | the flash edition's root file system: program list, `/etc`, builders |
 | `tools/` | build, boot, test and serial console helpers |
-| `prepare/` | step 0: installing U-Boot and OpenWrt (scripts only; firmware is not included) |
-| `docs/` | explanations |
+| `prepare/` | installing U-Boot and OpenWrt (scripts only; firmware is not included) |
+| `docs/` | the documents above |
 
 ## License
 

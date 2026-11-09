@@ -1,4 +1,9 @@
-# Step 1: building and booting NetBSD
+# Building from source, booting and testing
+
+For working on the port: building the kernels and images from source, booting them over
+TFTP without touching the flash, a full NetBSD on a USB stick for development, and the
+test bench. To install a released image instead, see [install.md](install.md). U-Boot
+must be installed first ([uboot.md](uboot.md)).
 
 ## How the code is organised
 

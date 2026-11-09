@@ -1,4 +1,7 @@
-# Step 0: installing U-Boot
+# Installing U-Boot
+
+Step 1 of [install.md](install.md). It is the only step that touches the vendor's
+flash layout, and the way back is described at the end.
 
 NetBSD's kernel is loaded by **U-Boot**. The stock FRITZ!Box 7530 has none, so the first
 step is to install it. The easy way is OpenWrt's official installation method, which puts

@@ -1,4 +1,4 @@
-# Steps 2-3: how the drivers work
+# How the drivers work
 
 First the patterns every NetBSD driver follows, then each driver. Keep this open next to
 the code in `sys/arch/arm/qcom/`.

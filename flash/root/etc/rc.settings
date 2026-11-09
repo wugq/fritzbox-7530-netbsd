@@ -29,6 +29,29 @@ config_has_settings() {
 	    dd bs=1 skip=257 count=5 2>/dev/null)" = ustar ]
 }
 
+# settings_files -- the files of /etc/saveconfig.list that exist, relative
+# to / (tar members without a leading /).
+settings_files() {
+	grep -v '^#' /etc/saveconfig.list | grep -v '^$' |
+	    while read -r f; do [ -e "$f" ] && echo "${f#/}"; done
+}
+
+# image_copies -- copy the image's versions of the settings files to
+# /var/run/image, before /etc/rc puts the saved ones over them.
+image_copies() {
+	mkdir -p /var/run/image
+	(cd / && pax -rw -pe $(settings_files) /var/run/image)
+}
+
+# changed_settings -- the settings files that are not the same as the
+# image's copy (or that the image does not have: ssh host keys, ...).
+changed_settings() {
+	local f
+	for f in $(settings_files); do
+		cmp -s "/$f" "/var/run/image/$f" || echo "/$f"
+	done
+}
+
 # mount_usb ro|rw -- mount the USB stick on /mnt.  Tries sd0a (FFS), then
 # sd0e and sd0i (FAT).  Sets USB_DEV.  Returns 1 if none.
 mount_usb() {
