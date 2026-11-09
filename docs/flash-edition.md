@@ -112,6 +112,26 @@ Without that volume, or while it holds no settings, a USB stick is used instead:
 both scripts use: it finds the volume's numbers in the boot messages and makes
 `/dev/ubivolN`.
 
+## LEDs, buttons and logs
+
+- **LEDs** (`gpioleds`, `sysctl hw.led`): `/etc/rc` lights `info_red` when it starts and
+  switches to `info_green` when the system is up, so a boot that hangs stays red. `power`
+  is on from the device tree.
+- **Buttons** (`gpiokeys` -> `powerd`): `/etc/powerd/scripts/hotkey_button` gets the
+  button and "pressed"/"released"; the time between the two tells a short press from a
+  long one (5 seconds or more):
+
+  | button | short | long |
+  |---|---|---|
+  | wlan | night mode: all LEDs off; again: back on | - |
+  | wps | - | reboot |
+  | dect | - | `saveconfig`: save the settings to the NAND |
+
+  Actions are logged and acknowledged by three green blinks (red: `saveconfig` failed).
+- **Logs**: `/etc/syslog.conf` sends everything from `info` up to `/var/log/messages`,
+  `authpriv` to `/var/log/authlog`, errors also to the console. `/var/log` is in RAM: the
+  logs start empty at every boot.
+
 ## Installing it
 
 From the U-Boot prompt (`UBOOT_ONLY=1 tools/nb-cycle.sh` gets there), with the image on

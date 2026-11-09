@@ -13,6 +13,8 @@ export PATH=/sbin:/bin:/usr/sbin:/usr/bin
 umask 022
 . /etc/rc.settings	# config_vol, mount_usb: where the settings are kept
 echo "flash edition: starting"
+# red while booting, green when up: a boot that hangs stays red
+sysctl -qw hw.led.info_red=1
 
 # init(8) mounted the root read-only: make it writable (it is RAM anyway)
 mount -uw /
@@ -23,6 +25,7 @@ mount -t ptyfs ptyfs /dev/pts
 mount -t kernfs kernfs /kern
 mount -t procfs procfs /proc
 touch /var/run/utmp /var/run/utmpx /var/log/wtmp /var/log/wtmpx
+touch /var/log/messages /var/log/authlog; chmod 600 /var/log/authlog
 dmesg > /var/run/dmesg.boot
 
 # --- saved settings (saveconfig(8))
@@ -84,7 +87,8 @@ ssh-keygen -A >/dev/null
 syslogd -s
 /usr/sbin/sshd
 [ "$NTP" = yes ] && ntpd -p /var/run/ntpd.pid
-powerd
+powerd	# buttons: /etc/powerd/scripts/hotkey_button
 
+sysctl -qw hw.led.info_red=0 hw.led.info_green=1
 echo "flash edition: up ($(uname -v | cut -d: -f1))"
 exit 0

@@ -1,0 +1,75 @@
+#!/bin/sh
+#
+# powerd(8) runs this for the buttons (gpiokeys(4), the "keys" node of the
+# device tree): $1 is the button ("wlan", "wps" or "dect"), $2 "pressed"
+# or "released".  The time between the two tells a short press from a
+# long one (held 5 seconds or more):
+#
+#	wlan  short	night mode: all LEDs off; again: back on
+#	wps   long	reboot
+#	dect  long	saveconfig: save the settings to the NAND
+#
+# Every action is logged and acknowledged on the info LED: green blinks
+# when it worked, red when it did not.
+#
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+LONG=5
+NIGHT=/var/run/leds.night
+
+blink() {	# blink green|red: three quick flashes
+	for i in 1 2 3; do
+		sysctl -qw hw.led.info_$1=1; sleep 0.15
+		sysctl -qw hw.led.info_$1=0; sleep 0.15
+	done
+	[ -f $NIGHT ] || sysctl -qw hw.led.info_green=1
+}
+
+case "$2" in
+pressed)
+	date +%s > /var/run/button.$1
+	exit 0
+	;;
+released)
+	t0=$(cat /var/run/button.$1 2>/dev/null) || exit 0
+	rm -f /var/run/button.$1
+	held=$(($(date +%s) - t0))
+	;;
+*)
+	logger -p warning "$0: unsupported event $2 on $1"
+	exit 1
+	;;
+esac
+
+case "$1:$([ $held -ge $LONG ] && echo long || echo short)" in
+wlan:short)
+	if [ -f $NIGHT ]; then
+		rm -f $NIGHT
+		sysctl -qw hw.led.power=1 hw.led.info_green=1
+		logger "button wlan: LEDs on"
+	else
+		touch $NIGHT
+		for l in $(sysctl hw.led | cut -d" " -f1); do
+			sysctl -qw $l=0
+		done
+		logger "button wlan: night mode, LEDs off"
+	fi
+	;;
+wps:long)
+	logger "button wps held ${held}s: reboot"
+	blink green
+	shutdown -r now "wps button"
+	;;
+dect:long)
+	if saveconfig >/dev/null 2>&1; then
+		logger "button dect held ${held}s: settings saved"
+		blink green
+	else
+		logger -p err "button dect held ${held}s: saveconfig failed"
+		blink red
+	fi
+	;;
+*)
+	logger "button $1 pressed for ${held}s: nothing to do"
+	;;
+esac
+exit 0
