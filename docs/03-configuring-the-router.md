@@ -21,6 +21,7 @@ A fresh installation comes up with these settings:
 |---|---|
 | LAN | 192.168.77.1/24 on switch ports 1, 2 and 4 |
 | WAN | switch port 3, fixed address 192.168.78.1/24, no default route |
+| firewall | on: from the WAN, only ICMP and replies to connections the router or the LAN started get in |
 | NAT, DHCP server | off |
 | DNS resolver | on, for the LAN |
 | root | no password on the serial console; ssh only with a key, and none is set |
@@ -60,7 +61,11 @@ port 3, edit `/etc/router.conf` and set:
 WAN_MODE=dhcp
 NAT=yes
 DHCPD=yes
+FIREWALL=yes
 ```
+
+`FIREWALL=yes` is already the default; a `router.conf` saved by an older version lacks
+the line, and a missing option means `no`.
 
 then save and reboot:
 
@@ -109,6 +114,7 @@ version of a file you never edited, the new version is used.
 | `WAN_ADDR`, `WAN_GW` | address/prefix, address | `static` only: the address and the default route |
 | `PPPOE_USER`, `PPPOE_PASS`, `PPPOE_AUTH` | text, text, `chap` or `pap` | `pppoe` only |
 | `LAN_ADDR6` | address/prefix | an IPv6 address for the LAN, e.g. `fd00:77::1/64`; clients get addresses from router advertisements |
+| `FIREWALL` | `yes`, `no` | of new connections from the WAN, let only ICMP in (`/etc/npf.conf`) |
 | `NAT` | `yes`, `no` | masquerade the LAN behind the WAN address (`/etc/npf.conf`) |
 | `DHCPD` | `yes`, `no` | DHCP server on the LAN (`/etc/dhcpd.conf`) |
 | `DNS` | `yes`, `no` | DNS resolver for the LAN (unbound) |

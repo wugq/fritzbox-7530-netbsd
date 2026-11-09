@@ -52,6 +52,17 @@ changed_settings() {
 	done
 }
 
+# lan_net a.b.c.d/len -- the network of an address: 192.168.77.1/24 ->
+# 192.168.77.0/24
+lan_net() {
+	local ip=${1%/*} len=${1#*/} n
+	local IFS=.
+	set -- $ip
+	n=$(( ($1 << 24 | $2 << 16 | $3 << 8 | $4) &
+	    (0xffffffff << (32 - len)) & 0xffffffff ))
+	echo "$((n >> 24 & 255)).$((n >> 16 & 255)).$((n >> 8 & 255)).$((n & 255))/$len"
+}
+
 # mount_usb ro|rw -- mount the USB stick on /mnt.  Tries sd0a (FFS), then
 # sd0e and sd0i (FAT).  Sets USB_DEV.  Returns 1 if none.
 mount_usb() {

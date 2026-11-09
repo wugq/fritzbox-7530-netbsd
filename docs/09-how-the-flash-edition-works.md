@@ -116,7 +116,7 @@ read in one page:
 3. network: the LAN on `qcomedma0`; the WAN port as `vlan2` (the switch tags it, see
    [Chapter 7](07-how-the-drivers-work.md#vlans-and-a-wan-port)) with a static address, `dhcpcd` or
    `pppoe0`; IPv6 on the LAN with `rtadvd`;
-4. services by option: `npf` (NAT), `dhcpd`, `unbound`, `ntpd`; always `syslogd`,
+4. services by option: `npf` (firewall and NAT), `dhcpd`, `unbound`, `ntpd`; always `syslogd`,
    `sshd` (host keys made if missing), `powerd` (buttons);
 5. info LED green.
 
@@ -148,8 +148,16 @@ makes `/dev/ubivolN`.
 
 ## 9.7. Services
 
-- **NAT** (`npf.conf`): masquerading on `vlan2` or `pppoe0`; on `pppoe0` the TCP MSS is
-  clamped to 1452, since PPPoE's MTU is 1492 and LAN hosts send 1500-byte packets.
+- **Firewall and NAT** (`npf.conf`): on the WAN interface (`vlan2` or `pppoe0`),
+  NPF tracks every connection that leaves (`pass stateful out`) and lets its replies
+  back in; of anything else coming in, only ICMP passes (ping, and the "too big" errors
+  path MTU discovery depends on). So the router's ssh and NTP, and the LAN, are not
+  reachable from the WAN. NAT masquerades the LAN behind the WAN address. On `pppoe0`
+  the TCP MSS is also clamped to 1452, since PPPoE's MTU is 1492 and LAN hosts send
+  1500-byte packets. `/etc/rc` loads a copy of `npf.conf`: it adds `$lan_net` from
+  `LAN_ADDR` and leaves out the lines marked `# NAT` or `# FIREWALL` whose option is
+  off. Measured cost of the stateful firewall on forwarding: within the run-to-run
+  variation (one flow about 550 Mbit/s, four flows 900-914 Mbit/s, with or without it).
 - **DNS**: unbound, a recursive resolver, on the LAN addresses and localhost, answering
   the LAN only. `/etc/rc` writes the addresses into `/var/run/unbound.local.conf`;
   `<HOSTNAME>.lan` resolves to the router. No DNSSEC validation: it needs a maintained

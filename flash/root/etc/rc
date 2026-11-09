@@ -124,8 +124,17 @@ if [ "${DNS:-no}" = yes ]; then
 	sleep 1
 	pgrep -qx unbound && echo "nameserver 127.0.0.1" > /etc/resolv.conf
 fi
-if [ "$NAT" = yes ]; then
-	npfctl reload /etc/npf.conf && npfctl start
+# Firewall and NAT (/etc/npf.conf): $lan_net from LAN_ADDR, and only the
+# parts that are switched on
+if [ "${FIREWALL:-no}" = yes ] || [ "$NAT" = yes ]; then
+	{
+		grep -q '^\$lan_net' /etc/npf.conf ||
+		    echo "\$lan_net = $(lan_net "$LAN_ADDR")"
+		sed -e "$([ "$NAT" = yes ] || echo '/# NAT$/d')" \
+		    -e "$([ "${FIREWALL:-no}" = yes ] || echo '/# FIREWALL$/d')" \
+		    /etc/npf.conf
+	} > /var/run/npf.conf
+	npfctl reload /var/run/npf.conf && npfctl start
 fi
 if [ "$DHCPD" = yes ]; then
 	touch /var/db/dhcpd.leases
