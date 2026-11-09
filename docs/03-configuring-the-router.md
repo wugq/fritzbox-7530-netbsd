@@ -116,7 +116,7 @@ version of a file you never edited, the new version is used.
 | `LAN_ADDR6` | address/prefix | an IPv6 address for the LAN, e.g. `fd00:77::1/64`; clients get addresses from router advertisements |
 | `FIREWALL` | `yes`, `no` | of new connections from the WAN, let only ICMP in (`/etc/npf.conf`) |
 | `NAT` | `yes`, `no` | masquerade the LAN behind the WAN address (`/etc/npf.conf`) |
-| `DHCPD` | `yes`, `no` | DHCP server on the LAN (`/etc/dhcpd.conf`) |
+| `DHCPD` | `yes`, `no` | DHCP server on the LAN: addresses .100 to .199 of `LAN_ADDR`'s network; fixed addresses and other options in `/etc/dhcpd.conf` |
 | `DNS` | `yes`, `no` | DNS resolver for the LAN (unbound) |
 | `NTP` | `yes`, `no` | set the clock from the internet |
 

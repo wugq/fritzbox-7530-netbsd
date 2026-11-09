@@ -136,9 +136,20 @@ if [ "${FIREWALL:-no}" = yes ] || [ "$NAT" = yes ]; then
 	} > /var/run/npf.conf
 	npfctl reload /var/run/npf.conf && npfctl start
 fi
+# DHCP server: /etc/dhcpd.conf plus the LAN's subnet from LAN_ADDR
+# (unless the file declares its subnet itself)
 if [ "$DHCPD" = yes ]; then
 	touch /var/db/dhcpd.leases
-	dhcpd -q qcomedma0
+	if grep -q '^[[:space:]]*subnet' /etc/dhcpd.conf; then
+		cp /etc/dhcpd.conf /var/run/dhcpd.conf
+	else
+		{
+			echo 'include "/etc/dhcpd.conf";'
+			dhcpd_subnet "$LAN_ADDR" \
+			    "$([ "${DNS:-no}" = yes ] && echo dns)"
+		} > /var/run/dhcpd.conf
+	fi
+	dhcpd -q -cf /var/run/dhcpd.conf qcomedma0
 fi
 
 # --- services

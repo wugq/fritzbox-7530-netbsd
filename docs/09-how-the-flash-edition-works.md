@@ -158,6 +158,11 @@ makes `/dev/ubivolN`.
   `LAN_ADDR` and leaves out the lines marked `# NAT` or `# FIREWALL` whose option is
   off. Measured cost of the stateful firewall on forwarding: within the run-to-run
   variation (one flow about 550 Mbit/s, four flows 900-914 Mbit/s, with or without it).
+- **DHCP** (`DHCPD=yes`): ISC dhcpd on the LAN. `/etc/rc` writes the subnet declaration
+  from `LAN_ADDR` (addresses .100 to .199, the router as gateway, and as DNS server
+  with `DNS=yes`) into `/var/run/dhcpd.conf`, which includes `/etc/dhcpd.conf` for
+  lease times and fixed addresses. So changing `LAN_ADDR` is enough. An
+  `/etc/dhcpd.conf` with a `subnet` declaration of its own is used unchanged.
 - **DNS**: unbound, a recursive resolver, on the LAN addresses and localhost, answering
   the LAN only. `/etc/rc` writes the addresses into `/var/run/unbound.local.conf`;
   `<HOSTNAME>.lan` resolves to the router. No DNSSEC validation: it needs a maintained

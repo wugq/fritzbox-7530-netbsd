@@ -63,6 +63,33 @@ lan_net() {
 	echo "$((n >> 24 & 255)).$((n >> 16 & 255)).$((n >> 8 & 255)).$((n & 255))/$len"
 }
 
+# int2ip n -- a 32-bit number as a dotted address
+int2ip() {
+	echo "$(($1 >> 24 & 255)).$(($1 >> 16 & 255)).$(($1 >> 8 & 255)).$(($1 & 255))"
+}
+
+# dhcpd_subnet a.b.c.d/len [dns] -- dhcpd.conf(5) subnet declaration for
+# the LAN: addresses .100-.199 of the network (the upper half of one
+# smaller than /24), the router as gateway and, with "dns", as DNS server
+dhcpd_subnet() {
+	local ip=${1%/*} len=${1#*/} n mask size lo hi
+	local IFS=.
+	set -- $ip "${2:-}"
+	n=$(($1 << 24 | $2 << 16 | $3 << 8 | $4))
+	mask=$(( (0xffffffff << (32 - len)) & 0xffffffff ))
+	n=$((n & mask)) size=$((1 << (32 - len)))
+	if [ $size -ge 256 ]; then
+		lo=$((n + 100)) hi=$((n + 199))
+	else
+		lo=$((n + size / 2)) hi=$((n + size - 2))
+	fi
+	echo "subnet $(int2ip $n) netmask $(int2ip $mask) {"
+	echo "	range $(int2ip $lo) $(int2ip $hi);"
+	echo "	option routers $ip;"
+	[ "$5" = dns ] && echo "	option domain-name-servers $ip;"
+	echo "}"
+}
+
 # mount_usb ro|rw -- mount the USB stick on /mnt.  Tries sd0a (FFS), then
 # sd0e and sd0i (FAT).  Sets USB_DEV.  Returns 1 if none.
 mount_usb() {
