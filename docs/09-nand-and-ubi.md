@@ -25,8 +25,8 @@ After reading this chapter, you will know:
 
 Before reading this chapter, you should:
 
-- have read the driver pattern ([Section 6.2](how-the-drivers-work.md#62-the-netbsd-driver-pattern));
-- know how settings are kept ([Section 8.6](how-the-flash-edition-works.md#86-how-settings-are-kept)).
+- have read the driver pattern ([Section 6.2](06-how-the-drivers-work.md#62-the-netbsd-driver-pattern));
+- know how settings are kept ([Section 8.6](08-how-the-flash-edition-works.md#86-how-settings-are-kept)).
 
 ## 9.2. The Chip
 

@@ -15,7 +15,7 @@ The [Handbook](docs/README.md) has two parts:
 
 - **Part I, Using**: installing U-Boot, installing NetBSD from a
   [release](../../releases), configuring the router, updating and recovery. Start with
-  [Chapter 1](docs/installing-uboot.md). You need a 3.3 V USB serial adapter and a Linux PC with a
+  [Chapter 1](docs/01-installing-uboot.md). You need a 3.3 V USB serial adapter and a Linux PC with a
   wired port.
 - **Part II, How It Works**: building from source, the drivers, the kernel
   configuration, the flash edition, NAND and UBI.
@@ -50,7 +50,7 @@ KERNEL=FRITZ7530_FLASH tools/build.sh  # the flash edition kernel
 SETS=1 tools/mkflash.sh                # the flash edition image, tftp/netbsd-flash.itb
 ```
 
-Details in [Chapter 5](docs/building-and-testing.md). The GitHub Actions workflow
+Details in [Chapter 5](docs/05-building-and-testing.md). The GitHub Actions workflow
 (`.github/workflows/build.yml`) builds the same images on every push and publishes them
 as a release for every `v*` tag.
 

@@ -4,7 +4,7 @@
 
 The flash edition is the NetBSD system that runs from the router's own flash and works as
 a router without a PC: the `netbsd-flash.itb` image of a release. Installing and using
-it is in [installing-netbsd.md](installing-netbsd.md); this document explains how it is made and why it is
+it is in [Chapter 2](02-installing-netbsd.md); this document explains how it is made and why it is
 made that way.
 
 After reading this chapter, you will know:
@@ -16,8 +16,8 @@ After reading this chapter, you will know:
 
 Before reading this chapter, you should:
 
-- know how the system is used ([Chapter 2](installing-netbsd.md), [Chapter 3](configuring-the-router.md));
-- know the board kernel configuration ([Chapter 7](board-kernel-configuration.md)).
+- know how the system is used ([Chapter 2](02-installing-netbsd.md), [Chapter 3](03-configuring-the-router.md));
+- know the board kernel configuration ([Chapter 7](07-board-kernel-configuration.md)).
 
 ## 8.2. Booting from the NAND without Changing U-Boot
 
@@ -32,7 +32,7 @@ nandboot=ubi part ubi && ubi read 0x85000000 kernel && bootm
 It reads the UBI volume named `kernel` and boots it as a FIT image. Our images are FIT
 images too, so a UBI volume named `kernel` holding the NetBSD image is all it takes: **no
 U-Boot variable changes and no `saveenv`**. That is why installing is "write a volume,
-then swap the names" ([installing-netbsd.md](installing-netbsd.md#26-installing-into-the-flash)).
+then swap the names" ([Section 2.6](02-installing-netbsd.md#26-installing-into-the-flash)).
 
 The NAND (128 MB, 128 KB blocks, 2 KB pages):
 
@@ -61,9 +61,9 @@ OpenWrt's writable overlay `rootfs_data` (81 MB) is removed to make room.
 When the flash edition was made, NetBSD had no driver for the IPQ4019's NAND controller,
 so the root file system could not live in the NAND. It is a **memory disk inside the
 kernel**, the way NetBSD's installation kernels do it. (A NAND driver came later, see
-[nand-and-ubi.md](nand-and-ubi.md); it is used for the settings, the root stays in RAM.)
+[Chapter 9](09-nand-and-ubi.md); it is used for the settings, the root stays in RAM.)
 
-- `FRITZ7530_FLASH` is the board kernel `FRITZ7530` ([board-kernel-configuration.md](board-kernel-configuration.md))
+- `FRITZ7530_FLASH` is the board kernel `FRITZ7530` ([Chapter 7](07-board-kernel-configuration.md))
   with `MEMORY_DISK_IS_ROOT` and `MEMORY_DISK_ROOT_SIZE=81920`: a 40 MB array
   `md_root_image` in the kernel.
 - `tools/mkflash.sh` fills the array with the root image (`mdsetimage -s`), turns the
@@ -114,7 +114,7 @@ read in one page:
    `procfs`), light the info LED red;
 2. restore the saved settings (below) and read `/etc/router.conf`;
 3. network: the LAN on `qcomedma0`; the WAN port as `vlan2` (the switch tags it, see
-   [how-the-drivers-work.md](how-the-drivers-work.md#vlans-and-a-wan-port)) with a static address, `dhcpcd` or
+   [Chapter 6](06-how-the-drivers-work.md#vlans-and-a-wan-port)) with a static address, `dhcpcd` or
    `pppoe0`; IPv6 on the LAN with `rtadvd`;
 4. services by option: `npf` (NAT), `dhcpd`, `unbound`, `ntpd`; always `syslogd`,
    `sshd` (host keys made if missing), `powerd` (buttons);
@@ -123,7 +123,7 @@ read in one page:
 ## 8.6. How Settings Are Kept
 
 `saveconfig` writes the files listed in `/etc/saveconfig.list` as a tar archive into
-the UBI volume `config`, through the NAND driver ([nand-and-ubi.md](nand-and-ubi.md#settings-in-config)).
+the UBI volume `config`, through the NAND driver ([Chapter 9](09-nand-and-ubi.md#settings-in-config)).
 It writes whole LEBs (124 KB) at a time, so each save is one flash update per LEB.
 
 At boot, `/etc/rc`:

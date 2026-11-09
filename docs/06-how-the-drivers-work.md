@@ -18,7 +18,7 @@ After reading this chapter, you will know:
 
 Before reading this chapter, you should:
 
-- have read [Chapter 5](building-and-testing.md), at least how the code is organised and the device tree;
+- have read [Chapter 5](05-building-and-testing.md), at least how the code is organised and the device tree;
 - be able to read C.
 
 ## 6.2. The NetBSD Driver Pattern
@@ -67,7 +67,7 @@ driver's state.
 ### Building it in
 
 `files.qcom` declares devices and source files; a kernel configuration line
-`xxx* at fdt?` attaches them (see [building-and-testing.md](building-and-testing.md)).
+`xxx* at fdt?` attaches them (see [Chapter 5](05-building-and-testing.md)).
 
 ## 6.3. Platform Code: `ipq4019_platform.c`
 
