@@ -167,7 +167,7 @@ prevval() {	# prevval "row name" column -> number from the previous report
 {
 	echo "# Hardware test $STAMP${LABEL:+: $LABEL}"
 	echo
-	echo "- kernel: \`NetBSD 11.1 $KVER\`, repo \`$COMMIT\`, image \`$ITB\`"
+	echo "- kernel: \`NetBSD 11.1 $KVER\`, repo \`$COMMIT\`, image \`$( [ "${NOBOOT:-0}" = 1 ] && echo "(running system)" || echo "$ITB")\`"
 	echo "- previous report: $([ -n "$PREV" ] && basename "$PREV" || echo none)"
 	echo "- result: $([ $FAILS = 0 ] && echo "all checks passed" || echo "**$FAILS check(s) failed**")"
 	echo
