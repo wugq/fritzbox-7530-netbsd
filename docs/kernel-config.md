@@ -1,4 +1,6 @@
-# The board kernel configuration (`FRITZ7530`)
+# Chapter 7. The Board Kernel Configuration
+
+## 7.1. Synopsis
 
 GENERIC must boot on every armv7 board NetBSD supports, so it carries a dozen SoCs'
 drivers, displays, sound, PCI, SD cards, hundreds of USB devices... This board uses about
@@ -13,7 +15,17 @@ twenty kinds of device. `FRITZ7530` is a kernel configuration for it alone.
 Functions and speed are the same (all `tools/hwtest.sh` checks pass, routing as fast).
 It is the base of the flash edition ([flash-edition.md](flash-edition.md)).
 
-## Writing a board configuration
+After reading this chapter, you will know:
+
+- why a board configuration, and how one is written;
+- what building it revealed about hidden dependencies;
+- how to profile the kernel with `tprof`, and what that found in the forwarding path.
+
+Before reading this chapter, you should:
+
+- have built and booted a kernel ([Chapter 5](build-and-boot.md)).
+
+## 7.2. Writing a Board Configuration
 
 NetBSD's habit: GENERIC for all boards, small configurations for specific ones (the
 Raspberry Pi's `RPI`, ...). A configuration is input for `config(1)`:
@@ -38,7 +50,7 @@ needs. What stays and what goes is commented in `sys/arch/evbarm/conf/FRITZ7530`
 - to get something back, copy its line from GENERIC or GENERIC.common (USB network
   adapters, e.g. `ure*`, `axe*`, are in `dev/usb/usbdevices.config`).
 
-## What the first build revealed
+## 7.3. What the First Build Revealed
 
 A small configuration exposed dependencies GENERIC had hidden:
 
@@ -60,7 +72,7 @@ A small configuration exposed dependencies GENERIC had hidden:
 5. **Undefined `wskbd_input`**: `gpiokeys` reports keys as keyboard events: `wskbd` and
    `wsmux` are needed.
 
-## Use
+## 7.4. Using It
 
 ```
 KERNEL=FRITZ7530 tools/build.sh                    # -> tftp/netbsd-usb-FRITZ7530.itb
@@ -71,7 +83,7 @@ ITB=netbsd-usb-FRITZ7530.itb tools/hwtest.sh "notes"
 Kernels other than GENERIC get their name in the image names, so both kinds can sit in
 the TFTP directory side by side.
 
-## Profiling with tprof
+## 7.5. Profiling with tprof
 
 The board kernels have `armpmu` and `tprof`, and the flash edition carries `tprof(8)`:
 

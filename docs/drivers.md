@@ -1,4 +1,6 @@
-# How the drivers work
+# Chapter 6. How the Drivers Work
+
+## 6.1. Synopsis
 
 First the patterns every NetBSD driver follows, then each driver. Keep this open next to
 the code in `sys/arch/arm/qcom/`.
@@ -7,7 +9,19 @@ Several drivers were ported from FreeBSD's IPQ4018 support (`qcom_gcc`, `qcom_tl
 `qcom_rnd`, `ar40xx`, the USB PHYs) or follow Linux (`qcom_nandc`, `ipqess`, `msm_serial`,
 `gcc-ipq4019`); Linux code was read for the hardware behaviour, not copied.
 
-## 0. The NetBSD driver pattern
+After reading this chapter, you will know:
+
+- how a NetBSD driver finds its hardware through the device tree, and how it touches registers;
+- how the secondary CPUs are started without PSCI;
+- how each driver of the port works: serial console, clocks and resets, watchdog, random numbers, USB, GPIO, Ethernet and the switch;
+- what went wrong on the way, driver by driver.
+
+Before reading this chapter, you should:
+
+- have read [Chapter 5](build-and-boot.md), at least how the code is organised and the device tree;
+- be able to read C.
+
+## 6.2. The NetBSD Driver Pattern
 
 ### From the device tree to a driver
 
@@ -55,7 +69,7 @@ driver's state.
 `files.qcom` declares devices and source files; a kernel configuration line
 `xxx* at fdt?` attaches them (see [build-and-boot.md](build-and-boot.md)).
 
-## 1. Platform code: `ipq4019_platform.c`
+## 6.3. Platform Code: `ipq4019_platform.c`
 
 Before any driver exists, the kernel needs the SoC's basics, registered with
 `FDT_PLATFORM(ipq4019, "qcom,ipq4019", &ipq4019_platform)` and picked when the device
@@ -84,7 +98,7 @@ name with `ARM_CPU_METHOD`, `cpu_enable_qcom_kpss_acc_v2()`. Following Linux's
    core stays dead. A value must also go into the **L2 cache's SAW** (not the CPU's own).
 3. **sends an SGI** to wake the core waiting in WFI so it reads its start address.
 
-## 2. Serial console: `qcom_uart.c` (`qcom,msm-uartdm-v1.4`)
+## 6.4. Serial Console: `qcom_uart.c` (`qcom,msm-uartdm-v1.4`)
 
 Qualcomm's UARTDM is not a 16550. The driver is interrupt driven: receive as FreeBSD's
 `uart_dev_msm.c`, transmit as Linux's `msm_serial.c`.
@@ -146,7 +160,7 @@ in case an interrupt is ever lost.
 | a 256 / 1000-character line in one burst | console dead, power-off needed | received and executed |
 | `jot 5000` | works (busy wait per character) | 5000 lines, complete and in order, 2.7 s (line rate ~2.1 s) |
 
-## 3. Reset, watchdog, clocks, random numbers
+## 6.5. Reset, Watchdog, Clocks, Random Numbers
 
 ### `qcom_pshold.c` (`qcom,pshold`)
 
@@ -221,7 +235,7 @@ from `PRNG_DATA_OUT`. Set-up from FreeBSD's `qcom_rnd`, the entropy glue as NetB
 `meson_rng.c`. Its clock (`GCC_PRNG_AHB_CLK`) is enabled through the GCC first: reading a
 peripheral whose clock is off can hang the bus. Result: `entropy: ready` at attach.
 
-## 4. USB: `qcom_dwc3.c` and `qcom_usbphy.c`
+## 6.6. USB: `qcom_dwc3.c` and `qcom_usbphy.c`
 
 The USB 3 controller is a Synopsys DWC3, which NetBSD supports (`dwc3_fdt` + `xhci`). On
 Qualcomm chips the device tree wraps it in a glue node:
@@ -245,7 +259,7 @@ Two more things are needed:
 
 Before these drivers, both had to be poked from U-Boot with `mw.l`.
 
-## 5. GPIO: `qcom_tlmm.c` (`qcom,ipq4019-pinctrl`)
+## 6.7. GPIO: `qcom_tlmm.c` (`qcom,ipq4019-pinctrl`)
 
 The TLMM owns the chip's 100 pins, each with a 4 KB register page: `+0` configuration
 (function, pull, drive strength, output enable), `+4` level (bit 0 input, bit 1 output).
@@ -268,7 +282,7 @@ The driver provides:
 Pin function selection is not implemented (the firmware set it up), nor GPIO interrupts
 (polling is enough for buttons).
 
-## 6. Ethernet: `ipq4019_edma.c` (`qcom,ipq4019-ess-edma`)
+## 6.8. Ethernet: `ipq4019_edma.c` (`qcom,ipq4019-ess-edma`)
 
 The biggest driver, and the most worth reading.
 
@@ -377,7 +391,7 @@ Each design point is a lesson:
 | `sysctl hw.qcomedma0.prof=1` | print and clear per-CPU cycle accounting: RX, TX, lock waits |
 | `sysctl hw.qcomedma0.rss_type` | which headers the RSS hash covers |
 
-## 7. Switch: `ipq4019_ess.c` (`qca,ipq4019-qca8337n`)
+## 6.9. Switch: `ipq4019_ess.c` (`qca,ipq4019-qca8337n`)
 
 Written after FreeBSD's `ar40xx(4)`. The EDMA driver handles the DMA engine; everything
 on the switch and PHY side is here.

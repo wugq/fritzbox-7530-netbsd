@@ -67,4 +67,4 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" out/* --title "${GITHUB_REF_NAME}" --notes "netbsd-flash.itb: the router system, to install into the flash or try from RAM. netbsd-usb-FRITZ7530.itb: a kernel with its root on a USB stick, for development. How to install: https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/docs/install.md"
+        run: gh release create "${GITHUB_REF_NAME}" out/* --title "${GITHUB_REF_NAME}" --notes "netbsd-flash.itb: the router system, to install into the flash or try from RAM. netbsd-usb-FRITZ7530.itb: a kernel with its root on a USB stick, for development. Installing and using: https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/docs/README.md"

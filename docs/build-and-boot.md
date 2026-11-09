@@ -1,11 +1,26 @@
-# Building from source, booting and testing
+# Chapter 5. Building from Source and Testing
+
+## 5.1. Synopsis
 
 For working on the port: building the kernels and images from source, booting them over
 TFTP without touching the flash, a full NetBSD on a USB stick for development, and the
 test bench. To install a released image instead, see [install.md](install.md). U-Boot
 must be installed first ([uboot.md](uboot.md)).
 
-## How the code is organised
+After reading this chapter, you will know:
+
+- how this repository sits on top of NetBSD's source tree, and what the patches change;
+- how the device tree for the board is made;
+- how to build the kernels and images, and why they are FIT images loaded at 0x80000040;
+- how to boot them over TFTP, with the root file system on a USB stick;
+- how the test bench and `tools/hwtest.sh` work.
+
+Before reading this chapter, you should:
+
+- have U-Boot installed and the serial console working ([Chapter 1](uboot.md));
+- know how to boot an image from RAM ([Section 2.5](install.md#25-trying-netbsd-from-ram)).
+
+## 5.2. How the Code Is Organised
 
 NetBSD's source tree (`src/`) is not in this repository, only what was added and changed:
 
@@ -50,7 +65,7 @@ file	arch/arm/qcom/qcom_uart.c	qcom_uart        # built when a kernel config use
 matching device tree node; `pass 4` orders the attachments (the console early, the
 network late).
 
-## The device tree
+## 5.3. The Device Tree
 
 The board's device tree is `sys/arch/arm/dts/qcom-ipq4019-fritzbox-7530.dts`. It
 `#include`s NetBSD's own `qcom-ipq4019.dtsi` (imported from Linux, under
@@ -77,7 +92,7 @@ The `-usbroot` variant only includes the main file and sets `bootargs` to `root=
 The device tree uses macros like `GIC_SPI` and `GCC_ESS_CLK`, so `build.sh` runs the C
 preprocessor first and `dtc` after, as Linux and NetBSD do.
 
-## Building
+## 5.4. Building
 
 ```
 tools/build.sh
@@ -109,7 +124,7 @@ curl -o dl/ramdisk.fs https://cdn.netbsd.org/pub/NetBSD/NetBSD-11.1/evbarm-earmv
   physical" works, so the kernel must be loaded exactly at 0x80000040, or it panics with
   "overlapping mappings".
 
-## Booting
+## 5.5. Booting
 
 ### 1. TFTP server on the PC (terminal A, keep it running)
 
@@ -154,7 +169,7 @@ Plug it into the 7530's USB port and boot `netbsd-usb.itb` instead (its device t
 ifconfig qcomedma0 192.168.77.1/24 up
 ```
 
-## Automation
+## 5.6. Automation
 
 `tools/nb-cycle.sh` does all of the above through the serial console: reboot into U-Boot
 (from OpenWrt or NetBSD, logging in first if NetBSD sits at its login prompt; `go` if EVA
@@ -183,7 +198,7 @@ The PC's Intel e1000e NIC sometimes drops into a low-power mode when the router 
 the link (the router then reports the port at 10 Mbit/s and the PC sees no carrier);
 `nmcli con up fritz-netbsd` wakes it up, and `nb-cycle.sh` does that between TFTP tries.
 
-## Early console
+## 5.7. Early Console
 
 Between kernel entry and the UART driver's attach, nothing is printed. To see that part,
 uncomment in the kernel configuration (`VERBOSE_INIT_ARM` is GENERIC's own, the `EARLYCONS`
@@ -194,7 +209,7 @@ options 	VERBOSE_INIT_ARM
 options 	EARLYCONS=qcom, CONSADDR=0x078af000
 ```
 
-## Test bench and automated tests
+## 5.8. The Test Bench and Automated Tests
 
 The test bench: a PC (192.168.77.2) on switch port 4 and a second machine running
 FreeBSD (192.168.78.2) on switch port 3, with `iperf3 -s -D` on it; the router routes

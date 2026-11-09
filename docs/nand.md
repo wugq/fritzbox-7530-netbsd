@@ -1,4 +1,6 @@
-# NAND and UBI from NetBSD
+# Chapter 9. NAND and UBI
+
+## 9.1. Synopsis
 
 Goal: NetBSD reads the NAND and keeps its settings in a small UBI volume, so the flash
 edition needs no USB stick. Neither NetBSD nor FreeBSD has a driver for the IPQ4019's
@@ -15,12 +17,23 @@ The code is split so the hardware and format knowledge can move to FreeBSD later
 Linux's `qcom_nandc.c` and `ubi-media.h` were read for the hardware and the format; the
 code is separate.
 
-## The chip
+After reading this chapter, you will know:
+
+- how the IPQ4019's NAND controller (QPIC) is driven without its DMA engine;
+- how a page is laid out in codewords with ECC;
+- how UBI's on-flash format is read, and how one volume is rewritten safely.
+
+Before reading this chapter, you should:
+
+- have read the driver pattern ([Section 6.2](drivers.md#62-the-netbsd-driver-pattern));
+- know how settings are kept ([Section 8.6](flash-edition.md#86-how-settings-are-kept)).
+
+## 9.2. The Chip
 
 `FETCH_ID` returns `c2 f1 80 95`: Macronix, 1 Gbit (128 MB), 8-bit bus (MX30LF1G18AC
 class): 2048-byte pages with 64 spare bytes, 64 pages per 128 KB block.
 
-## The controller without its DMA engine
+## 9.3. The Controller without Its DMA Engine
 
 QPIC normally works with a DMA engine, BAM: register writes and data move as BAM
 descriptors. The boot loader leaves it in **BAM mode**, where (as a comment in Linux's
@@ -63,7 +76,7 @@ hold 516 data bytes each, the last 500 data bytes and 16 free spare bytes
   under Linux; page 0x2600 (the first UBI block, at 0x1300000) starts with `UBI#`.
 - Throughput: 14.6 MB in 5 s (about 2.9 MB/s) without DMA.
 
-## UBI
+## 9.4. UBI
 
 UBI divides the `ubi` partition (0x1300000, 0x6d00000 bytes, from the device tree's
 `fixed-partitions`) into physical eraseblocks (PEBs). Each starts with an **erase counter

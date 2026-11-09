@@ -1,11 +1,25 @@
-# How the flash edition works
+# Chapter 8. How the Flash Edition Works
+
+## 8.1. Synopsis
 
 The flash edition is the NetBSD system that runs from the router's own flash and works as
 a router without a PC: the `netbsd-flash.itb` image of a release. Installing and using
 it is in [install.md](install.md); this document explains how it is made and why it is
 made that way.
 
-## Booting from the NAND without changing U-Boot
+After reading this chapter, you will know:
+
+- how the system boots from the NAND without any change to U-Boot;
+- how the kernel and the whole root file system fit in one 16 MB image;
+- what the root file system holds and how it is built;
+- what the boot script does, and how settings are kept across reboots.
+
+Before reading this chapter, you should:
+
+- know how the system is used ([Chapter 2](install.md), [Chapter 3](config.md));
+- know the board kernel configuration ([Chapter 7](kernel-config.md)).
+
+## 8.2. Booting from the NAND without Changing U-Boot
 
 U-Boot, as OpenWrt installs it, boots like this (`printenv`):
 
@@ -18,7 +32,7 @@ nandboot=ubi part ubi && ubi read 0x85000000 kernel && bootm
 It reads the UBI volume named `kernel` and boots it as a FIT image. Our images are FIT
 images too, so a UBI volume named `kernel` holding the NetBSD image is all it takes: **no
 U-Boot variable changes and no `saveenv`**. That is why installing is "write a volume,
-then swap the names" ([install.md](install.md#3-install-netbsd-into-the-flash)).
+then swap the names" ([install.md](install.md#26-installing-into-the-flash)).
 
 The NAND (128 MB, 128 KB blocks, 2 KB pages):
 
@@ -42,7 +56,7 @@ The UBI volumes with OpenWrt and NetBSD installed:
 
 OpenWrt's writable overlay `rootfs_data` (81 MB) is removed to make room.
 
-## The image: one gzipped kernel with the root file system inside
+## 8.3. The Image: One Gzipped Kernel with the Root File System Inside
 
 When the flash edition was made, NetBSD had no driver for the IPQ4019's NAND controller,
 so the root file system could not live in the NAND. It is a **memory disk inside the
@@ -72,7 +86,7 @@ SETS=1 AUTHORIZED_KEYS=~/.ssh/id_ed25519.pub tools/mkflash.sh  # with your ssh k
 ITB=netbsd-flash.itb tools/nb-cycle.sh                          # boot it from RAM (TFTP)
 ```
 
-## The root file system
+## 8.4. The Root File System
 
 It is NetBSD 11.1's own userland, a selection of about 230 files:
 
@@ -90,7 +104,7 @@ The largest parts are libcrypto (5 MB, for ssh), the DHCP server (3.4 MB) and li
 makes them at the first boot), no password, no authorized ssh keys unless
 `AUTHORIZED_KEYS` is given to a local build.
 
-## The boot script
+## 8.5. The Boot Script
 
 NetBSD's full system starts services with `rc.subr` and the scripts in `/etc/rc.d`. The
 flash edition has one `/etc/rc` that does the same jobs in order, so the whole boot can be
@@ -106,7 +120,7 @@ read in one page:
    `sshd` (host keys made if missing), `powerd` (buttons);
 5. info LED green.
 
-## How settings are kept
+## 8.6. How Settings Are Kept
 
 `saveconfig` writes the files listed in `/etc/saveconfig.list` as a tar archive into
 the UBI volume `config`, through the NAND driver ([nand.md](nand.md#settings-in-config)).
@@ -132,7 +146,7 @@ saved before an option existed keeps working.
 the `config` volume's device numbers in the boot messages (the driver prints them) and
 makes `/dev/ubivolN`.
 
-## Services
+## 8.7. Services
 
 - **NAT** (`npf.conf`): masquerading on `vlan2` or `pppoe0`; on `pppoe0` the TCP MSS is
   clamped to 1452, since PPPoE's MTU is 1492 and LAN hosts send 1500-byte packets.
@@ -153,7 +167,7 @@ makes `/dev/ubivolN`.
   to `/var/log/authlog`, errors also to the console. Without a `syslog.conf`, syslogd
   drops everything.
 
-## Pitfalls
+## 8.8. Pitfalls
 
 - **`ubi read` without a size reads the whole volume.** With a 48 MB volume it ran from
   0x85000000 to 0x88013000 and overwrote U-Boot itself (it sits between about 0x875F0000
