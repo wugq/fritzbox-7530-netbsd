@@ -150,7 +150,7 @@ fi
 ssh-keygen -A >/dev/null
 syslogd -s
 /usr/sbin/sshd
-[ "$NTP" = yes ] && ntpd -p /var/run/ntpd.pid
+[ "$NTP" = yes ] && ntpd -g -c /etc/ntp.conf
 powerd	# buttons: /etc/powerd/scripts/hotkey_button
 
 sysctl -qw hw.led.info_red=0 hw.led.info_green=1

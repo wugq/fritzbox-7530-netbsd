@@ -168,6 +168,10 @@ makes `/dev/ubivolN`.
   elsewhere.
 - **PPPoE**: `pppoe0` over `vlan2`, configured with `pppoectl`. Tested against FreeBSD's
   `pppoed` (session, CHAP, address from IPCP); NAT over it not yet end to end.
+- **Time** (`NTP=yes`): `ntpd` with NetBSD's pool servers (`/etc/ntp.conf`), started
+  with `-g`: the board has no battery-backed clock, so each boot starts at the time
+  stored in the root file system, from when the image was made. Until ntpd has
+  synchronised, log times are off.
 - **Buttons**: `gpiokeys` reports the buttons as key events and `powerd` runs
   `/etc/powerd/scripts/hotkey_button` with the button's name and "pressed" or
   "released". The script times the two to tell a short press from a long one.
