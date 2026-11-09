@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 300
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Host packages
         run: |
@@ -38,7 +38,7 @@ jobs:
       # The cross toolchain takes most of the time; it only depends on the
       # NetBSD commit.
       - name: Cache the NetBSD toolchain
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: tooldir
           key: tooldir-${{ env.NETBSD_COMMIT }}-v1
@@ -58,7 +58,7 @@ jobs:
           cp tftp/netbsd-flash.itb tftp/netbsd-usb-FRITZ7530.itb out/
           cd out && sha256sum *.itb > SHA256 && cat SHA256
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: fritzbox-7530-netbsd
           path: out/
