@@ -97,6 +97,9 @@
 /sbin/dhcpcd
 /sbin/ifconfig
 /sbin/npfctl
+/lib/npf/ext_normalize.so
+/lib/npf/ext_normalize.so.0
+/lib/npf/ext_normalize.so.0.0
 /sbin/ping
 /sbin/ping6
 /sbin/route
@@ -109,6 +112,10 @@
 /usr/sbin/arp
 /usr/sbin/dhcpd
 /usr/sbin/ndp
+/usr/sbin/rtadvd
+/usr/sbin/unbound
+/usr/sbin/unbound-checkconf
+/sbin/pppoectl
 /usr/sbin/ntpd
 /usr/sbin/sshd
 /usr/sbin/tcpdump

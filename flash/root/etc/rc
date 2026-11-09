@@ -63,12 +63,59 @@ if [ "${WAN_PORT:-0}" != 0 ]; then
 	ifconfig vlan2 vlan 2 vlanif qcomedma0
 	ifconfig vlan2 up
 	case "$WAN_MODE" in
-	dhcp)	dhcpcd -b -q vlan2 ;;
+	dhcp)	# with our own resolver, keep /etc/resolv.conf pointing at it
+		if [ "${DNS:-no}" = yes ]; then
+			dhcpcd -b -q -C resolv.conf vlan2
+		else
+			dhcpcd -b -q vlan2
+		fi ;;
 	static)	ifconfig vlan2 inet "$WAN_ADDR"
 		[ -n "$WAN_GW" ] && route -q add default "$WAN_GW" ;;
+	pppoe)	# PPP over Ethernet on the WAN port (a DSL or fibre modem);
+		# the link comes up when the provider answers
+		ifconfig pppoe0 create
+		pppoectl -e vlan2 pppoe0
+		pppoectl pppoe0 myauthproto="${PPPOE_AUTH:-chap}" \
+		    myauthname="$PPPOE_USER" myauthsecret="$PPPOE_PASS" \
+		    hisauthproto=none
+		ifconfig pppoe0 inet 0.0.0.0 0.0.0.1 netmask 0xffffffff up
+		route -q add default -iface 0.0.0.1 ;;
 	esac
 fi
 sysctl -qw net.inet.ip.forwarding=1
+
+# IPv6 on the LAN: an address and router advertisements (rtadvd).  The
+# WAN has no IPv6, so the router does not announce itself as the default
+# router (rltime 0), only the prefix and itself as DNS server (RDNSS).
+if [ -n "${LAN_ADDR6:-}" ]; then
+	ifconfig qcomedma0 inet6 "$LAN_ADDR6" alias
+	sysctl -qw net.inet6.ip6.forwarding=1
+	rdnss=
+	[ "${DNS:-no}" = yes ] && rdnss=":rdnss=\"${LAN_ADDR6%/*}\""
+	printf 'qcomedma0:\\\n\t:rltime#0%s:\n' "$rdnss" > /var/run/rtadvd.conf
+	rtadvd -c /var/run/rtadvd.conf qcomedma0
+fi
+
+# DNS resolver for the LAN (unbound, /etc/unbound/unbound.conf): it
+# answers on the LAN addresses and localhost, to the LAN only, and the
+# router itself uses it too
+if [ "${DNS:-no}" = yes ]; then
+	{
+		echo "server:"
+		echo "	interface: 127.0.0.1"
+		echo "	interface: ${LAN_ADDR%/*}"
+		echo "	access-control: $LAN_ADDR allow"
+		echo "	local-data: \"$HOSTNAME.lan. A ${LAN_ADDR%/*}\""
+		if [ -n "${LAN_ADDR6:-}" ]; then
+			echo "	interface: ${LAN_ADDR6%/*}"
+			echo "	access-control: $LAN_ADDR6 allow"
+			echo "	local-data: \"$HOSTNAME.lan. AAAA ${LAN_ADDR6%/*}\""
+		fi
+	} > /var/run/unbound.local.conf
+	unbound -c /etc/unbound/unbound.conf
+	sleep 1
+	pgrep -qx unbound && echo "nameserver 127.0.0.1" > /etc/resolv.conf
+fi
 if [ "$NAT" = yes ]; then
 	npfctl reload /etc/npf.conf && npfctl start
 fi

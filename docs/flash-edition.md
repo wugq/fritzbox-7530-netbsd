@@ -78,13 +78,33 @@ The root is in RAM: changes are lost at reboot unless saved. `/etc/router.conf`:
 HOSTNAME=fritzbox
 LAN_ADDR="192.168.77.1/24"   # qcomedma0: every switch port but the WAN one
 WAN_PORT=3                   # switch port number, 0 = no WAN
-WAN_MODE=static              # static or dhcp
+WAN_MODE=static              # static, dhcp or pppoe
 WAN_ADDR="192.168.78.1/24"
 WAN_GW=""
+PPPOE_USER="" PPPOE_PASS="" PPPOE_AUTH=chap   # pppoe only
+LAN_ADDR6=""                 # e.g. "fd00:77::1/64": IPv6 on the LAN
 NAT=no                       # masquerade the LAN behind the WAN (/etc/npf.conf)
 DHCPD=no                     # DHCP server on the LAN (/etc/dhcpd.conf)
+DNS=yes                      # DNS resolver for the LAN (unbound)
 NTP=no
 ```
+
+Settings saved before an option existed lack it; `/etc/rc` treats a missing option as
+"no" or empty, so an old router.conf keeps working as before.
+
+- **PPPoE** (`WAN_MODE=pppoe`, for a DSL or fibre modem on the WAN port): `pppoe0` over
+  `vlan2`, the default route through it once the provider answers. With `NAT=yes`,
+  `npf.conf` masquerades on `pppoe0` and clamps the TCP MSS to 1452 (PPPoE's MTU is
+  1492). Tested against FreeBSD's `pppoed`: session, CHAP, address from IPCP.
+- **DNS** (`DNS=yes`): unbound, a recursive resolver, on the LAN addresses and
+  localhost, answering the LAN only (`/etc/unbound/unbound.conf`; `/etc/rc` writes the
+  addresses into `/var/run/unbound.local.conf`). `<HOSTNAME>.lan` resolves to the router.
+  The router uses it too, and `dhcpd.conf` hands it out. No DNSSEC validation (it needs a
+  maintained trust anchor and a set clock).
+- **IPv6 on the LAN** (`LAN_ADDR6`): the address on `qcomedma0` and router advertisements
+  (`rtadvd`) with the prefix and the router as DNS server (RDNSS). The WAN has no IPv6
+  yet, so the router does not announce itself as the default router (router lifetime 0):
+  clients keep their IPv6 internet traffic away from it.
 
 `saveconfig` saves the files in `/etc/saveconfig.list` (router.conf, npf.conf,
 dhcpd.conf, passwords, ssh host keys, root's authorized keys, ...) as a tar archive into
@@ -179,6 +199,11 @@ image from the GitHub Actions workflow was installed this way and boots unattend
 From power-on to the login prompt takes about 45 s (28 s from `bootm`).
 
 ## Pitfalls
+
+- NetBSD's unbound is built for a chroot: without `-c` it looks for
+  `/var/chroot/unbound/etc/unbound/unbound.conf`. rtadvd chroots to `/var/chroot/rtadvd`,
+  which must exist. NPF loads `normalize` from `/lib/npf/ext_normalize.so`.
+- The image is 15.7 MB with unbound; the `kernel` volume holds 133 LEBs (16.9 MB).
 
 - **`ubi read` without a size reads the whole volume.** With a 48 MB volume that ran from
   0x85000000 to 0x88013000 and overwrote U-Boot itself (it sits between about 0x875F0000

@@ -23,7 +23,7 @@ mkdir -p "$T"
 cd "$T"
 mkdir -p bin sbin lib libexec etc/ssh dev tmp kern proc mnt root/.ssh \
     usr/bin usr/sbin usr/lib usr/libexec usr/share/misc usr/pkg/bin \
-    var/run var/log var/db var/chroot/sshd var/empty
+    var/run var/log var/db var/chroot/sshd var/chroot/rtadvd var/empty
 chmod 1777 tmp
 chmod 700 root/.ssh
 
