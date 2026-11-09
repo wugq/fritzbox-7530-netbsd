@@ -95,7 +95,7 @@ if [ -f dl/ramdisk.fs ]; then
 	python3 -I tools/mkfit.py "$OBJ/netbsd-$KERNEL.bin" dl/fritzbox-7530.dtb \
 	    dl/ramdisk.fs tftp/netbsd$SUF.itb
 else
-	echo "(no dl/ramdisk.fs: skipping tftp/netbsd.itb, see docs/build-and-boot.md)"
+	echo "(no dl/ramdisk.fs: skipping tftp/netbsd.itb, see docs/building-and-testing.md)"
 fi
 python3 -I tools/mkfit.py "$OBJ/netbsd-$KERNEL.bin" dl/fritzbox-7530-usbroot.dtb \
     - tftp/netbsd-usb$SUF.itb

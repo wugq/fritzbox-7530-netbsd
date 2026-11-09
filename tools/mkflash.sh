@@ -9,7 +9,7 @@
 # The root image goes into the kernel's md_root_image array with
 # mdsetimage(8) and the kernel is gzipped (U-Boot unpacks it): 14 MB
 # instead of 40 MB, so U-Boot's default "ubi read" of the whole volume
-# stays clear of U-Boot itself (docs/flash-edition.md).
+# stays clear of U-Boot itself (docs/how-the-flash-edition-works.md).
 #
 # The root image is made either from NetBSD's official binary sets
 # (SETS=1, on any host: flash/mkroot-sets.py; AUTHORIZED_KEYS=file adds

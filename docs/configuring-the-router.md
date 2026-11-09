@@ -11,7 +11,7 @@ After reading this chapter, you will know:
 - what the LEDs and buttons do, and where the logs are.
 
 Before reading this chapter, you should have NetBSD running on the router, from the flash
-or from RAM ([Chapter 2](install.md)).
+or from RAM ([Chapter 2](installing-netbsd.md)).
 
 ## 3.2. The First Boot
 

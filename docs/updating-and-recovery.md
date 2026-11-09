@@ -9,12 +9,12 @@ After reading this chapter, you will know:
 - how to recover a router that does not boot.
 
 Before reading this chapter, you should have installed NetBSD into the flash
-([Chapter 2](install.md)) and know how to reach the U-Boot prompt and run the TFTP server
-([Section 2.4](install.md#24-setting-up-the-tftp-server), [Section 2.5](install.md#25-trying-netbsd-from-ram)).
+([Chapter 2](installing-netbsd.md)) and know how to reach the U-Boot prompt and run the TFTP server
+([Section 2.4](installing-netbsd.md#24-setting-up-the-tftp-server), [Section 2.5](installing-netbsd.md#25-trying-netbsd-from-ram)).
 
 ## 4.2. Updating NetBSD
 
-Try the new image from RAM first ([Section 2.5](install.md#25-trying-netbsd-from-ram)).
+Try the new image from RAM first ([Section 2.5](installing-netbsd.md#25-trying-netbsd-from-ram)).
 Then, at the U-Boot prompt, with the new image on the TFTP server:
 
 > [!WARNING]
@@ -63,7 +63,7 @@ To make it the default again, from OpenWrt:
 ```
 
 OpenWrt then runs without saved settings, since its `rootfs_data` volume was removed
-([Section 2.6](install.md#26-installing-into-the-flash)). To give it one again, from
+([Section 2.6](installing-netbsd.md#26-installing-into-the-flash)). To give it one again, from
 OpenWrt: `ubimkvol /dev/ubi0 -N rootfs_data -m` (it takes all the free space).
 
 ## 4.4. When the Router Does Not Boot
@@ -75,8 +75,8 @@ then the adapter.
 
 **The info LED stays red.** NetBSD started but its boot script did not finish. The
 serial console shows the last message. Boot a known-good image from RAM
-([Section 2.5](install.md#25-trying-netbsd-from-ram)) and update the flash from there.
+([Section 2.5](installing-netbsd.md#25-trying-netbsd-from-ram)) and update the flash from there.
 
 **U-Boot does not start, or the flash is damaged.** EVA, AVM's boot loader, is never
 changed by these instructions. It can always start U-Boot and OpenWrt from RAM again, and
-OpenWrt can repair the flash: see [Section 1.7](uboot.md#17-recovery).
+OpenWrt can repair the flash: see [Section 1.7](installing-uboot.md#17-recovery).

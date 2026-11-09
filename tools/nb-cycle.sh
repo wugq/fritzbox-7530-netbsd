@@ -49,7 +49,7 @@ if [ "$USBPRE" = 1 ]; then
 fi
 ok=0
 # The PC's e1000e NIC sometimes drops into its low-power mode when the
-# router resets the link (docs/build-and-boot.md): wake it up between tries.
+# router resets the link (docs/building-and-testing.md): wake it up between tries.
 for t in 1 2 3 4 5 6; do
 	$SW "tftpboot 0x85000000 $ITB" 30 | grep -q "Bytes transferred" && { ok=1; break; }
 	nmcli con up fritz-netbsd >/dev/null 2>&1; sleep 3

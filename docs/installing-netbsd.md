@@ -14,7 +14,7 @@ After reading this chapter, you will know:
 
 Before reading this chapter, you should:
 
-- have installed U-Boot ([Chapter 1](uboot.md));
+- have installed U-Boot ([Chapter 1](installing-uboot.md));
 - have the serial console connected and a terminal program on it.
 
 ## 2.2. How the Router Boots
@@ -24,7 +24,7 @@ power on → Qualcomm firmware → EVA (AVM) → U-Boot → NetBSD (volume "kern
                                                   ↘ or a file from the PC (TFTP)
 ```
 
-EVA, AVM's boot loader, starts U-Boot, which [Chapter 1](uboot.md) installed. U-Boot
+EVA, AVM's boot loader, starts U-Boot, which [Chapter 1](installing-uboot.md) installed. U-Boot
 loads the volume named `kernel` from the flash's UBI partition and boots it. With
 OpenWrt installed, that volume is OpenWrt's. Installing NetBSD means writing it into a
 volume of its own and then giving that volume the name `kernel`; U-Boot's own settings
@@ -40,7 +40,7 @@ A release ([releases page](../../../releases)) has these files:
 | file | contents |
 |---|---|
 | `netbsd-flash.itb` | the router system: kernel and root file system in one 16 MB image. This is the one to install. |
-| `netbsd-usb-FRITZ7530.itb` | a kernel whose root file system is on a USB stick, for development ([Chapter 5](build-and-boot.md)) |
+| `netbsd-usb-FRITZ7530.itb` | a kernel whose root file system is on a USB stick, for development ([Chapter 5](building-and-testing.md)) |
 | `SHA256` | checksums |
 
 Check the download:
@@ -118,7 +118,7 @@ router to the system in its flash.
    ```
 
    `netbsd` (16 MB) will hold the image; `config` (248 KB) will hold NetBSD's saved
-   settings ([Chapter 3](config.md)).
+   settings ([Chapter 3](configuring-the-router.md)).
 
 2. Load the image and write it:
 
@@ -165,6 +165,6 @@ volumes makes NetBSD the default. U-Boot cannot rename volumes; OpenWrt can.
    ```
 
 The router now boots NetBSD by itself, in about 45 seconds. OpenWrt stays installed as
-`openwrt`; [Chapter 4](maintenance.md) shows how to boot it.
+`openwrt`; [Chapter 4](updating-and-recovery.md) shows how to boot it.
 
-Continue with [Chapter 3](config.md) to set the router up.
+Continue with [Chapter 3](configuring-the-router.md) to set the router up.

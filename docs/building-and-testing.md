@@ -4,8 +4,8 @@
 
 For working on the port: building the kernels and images from source, booting them over
 TFTP without touching the flash, a full NetBSD on a USB stick for development, and the
-test bench. To install a released image instead, see [install.md](install.md). U-Boot
-must be installed first ([uboot.md](uboot.md)).
+test bench. To install a released image instead, see [installing-netbsd.md](installing-netbsd.md). U-Boot
+must be installed first ([installing-uboot.md](installing-uboot.md)).
 
 After reading this chapter, you will know:
 
@@ -17,8 +17,8 @@ After reading this chapter, you will know:
 
 Before reading this chapter, you should:
 
-- have U-Boot installed and the serial console working ([Chapter 1](uboot.md));
-- know how to boot an image from RAM ([Section 2.5](install.md#25-trying-netbsd-from-ram)).
+- have U-Boot installed and the serial console working ([Chapter 1](installing-uboot.md));
+- know how to boot an image from RAM ([Section 2.5](installing-netbsd.md#25-trying-netbsd-from-ram)).
 
 ## 5.2. How the Code Is Organised
 
@@ -40,7 +40,7 @@ NetBSD's source tree (`src/`) is not in this repository, only what was added and
     of per-CPU interrupts are banked, like their enables); without it the PMU interrupt
     worked on one CPU only and `tprof` sampled one CPU of four.
   - `0006`: `tprof` starts and stops its counters with high-priority cross-calls, so a
-    busy network workqueue cannot hold them off (docs/kernel-config.md, "Profiling").
+    busy network workqueue cannot hold them off (docs/board-kernel-configuration.md, "Profiling").
   - `0007`: `ipflow` (the `GATEWAY` fast path) sends without its global lock, holding the
     route by a reference instead; 4 forwarded flows no longer queue on one lock.
 
@@ -49,7 +49,7 @@ one kernel for every board: GENERIC carries every SoC's drivers, and what differ
 boards (which devices, at which addresses) is in the **device tree** (DTB) the boot loader
 hands over. The kernel attaches drivers for what the device tree lists. Adding a board is
 mostly drivers and a device tree. (A small board kernel came later, see
-[kernel-config.md](kernel-config.md).)
+[board-kernel-configuration.md](board-kernel-configuration.md).)
 
 ### What is in files.qcom
 

@@ -13,7 +13,7 @@ twenty kinds of device. `FRITZ7530` is a kernel configuration for it alone.
 | object files built | 1747 | 677 |
 
 Functions and speed are the same (all `tools/hwtest.sh` checks pass, routing as fast).
-It is the base of the flash edition ([flash-edition.md](flash-edition.md)).
+It is the base of the flash edition ([how-the-flash-edition-works.md](how-the-flash-edition-works.md)).
 
 After reading this chapter, you will know:
 
@@ -23,7 +23,7 @@ After reading this chapter, you will know:
 
 Before reading this chapter, you should:
 
-- have built and booted a kernel ([Chapter 5](build-and-boot.md)).
+- have built and booted a kernel ([Chapter 5](building-and-testing.md)).
 
 ## 7.2. Writing a Board Configuration
 

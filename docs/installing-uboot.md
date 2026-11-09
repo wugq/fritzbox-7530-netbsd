@@ -160,7 +160,7 @@ Pressing a key at `Hit any key to stop autoboot` gives the U-Boot prompt:
 (FRITZ7530) #
 ```
 
-This is where NetBSD is loaded from ([Chapter 2](install.md)).
+This is where NetBSD is loaded from ([Chapter 2](installing-netbsd.md)).
 
 > [!WARNING]
 > Never run `saveenv` in U-Boot. Settings are typed (or scripted) each time and never
