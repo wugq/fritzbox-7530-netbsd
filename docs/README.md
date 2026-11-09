@@ -31,3 +31,12 @@ on the router (NetBSD or OpenWrt), `(FRITZ7530) #` at the U-Boot prompt.
    - booting from the NAND; the image; the root file system; the boot script; settings
 9. [NAND and UBI](09-nand-and-ubi.md)
    - the QPIC controller without DMA; page layout and ECC; UBI
+
+## Articles
+
+Case studies of problems met during the port: the symptom, the investigation with its
+wrong turns, the cause, the fix, and the machinery behind it. Each stands on its own.
+
+- [Where Do the Cycles Go? Profiling Packet Forwarding with tprof](articles/profiling-forwarding.md)
+  - performance counters, interrupt controllers, thread priorities, how a mutex behaves
+    on a multiprocessor; two NetBSD bugs and a global lock in the forwarding path
