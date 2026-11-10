@@ -89,5 +89,8 @@ uint32_t ubi_lite_mapped(struct ubi_lite *, uint32_t);
 int	ubi_lite_write_leb(struct ubi_lite *, uint32_t, uint32_t,
 	    const uint8_t *, uint32_t);
 int	ubi_lite_remove(struct ubi_lite *, uint32_t, uint8_t *);
+int	ubi_lite_create(struct ubi_lite *, const char *, uint32_t, uint32_t *,
+	    uint8_t *);
+int	ubi_lite_swap_names(struct ubi_lite *, uint32_t, uint32_t, uint8_t *);
 
 #endif /* _DEV_UBI_UBI_LITE_H_ */

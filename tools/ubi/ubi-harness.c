@@ -1,12 +1,15 @@
 /*
  * ubi-harness.c -- run ubi_lite on a file holding a UBI partition (the
  * ECC-corrected data, as backup-netbsd.sh writes it), on the PC: scan,
- * remove the named volumes, scan again, and write the result.  The flash
+ * run the operations, scan again, and write the result.  The flash
  * is simulated: programming only clears bits, a page of all 0xff reads as
  * erased.
  *
  *	cc -Iinc -o ubi-harness ubi-harness.c ../../sys/dev/ubi/ubi_lite.c
- *	./ubi-harness in.bin out.bin badpeb [volume ...]
+ *	./ubi-harness in.bin out.bin badpeb [op ...]
+ *
+ * op: rm:NAME, mk:NAME:LEBS, swap:NAME:NAME, wr:NAME:FILE (FILE into the
+ * volume from LEB 0).
  *
  * inc/ holds stand-ins for the kernel headers ubi_lite.c includes.
  */
@@ -42,9 +45,33 @@ int main(int argc, char **argv) {
 	printf("scan %d: used %u free %u bad %u corrupt %u sqnum %llu\n", e, u.ul_nused, u.ul_nfree, u.ul_nbad, u.ul_ncorrupt, (unsigned long long)u.ul_max_sqnum);
 	uint8_t *leb = malloc(u.ul_leb_size);
 	for (int i = 4; i < argc; i++) {
-		int v = ubi_lite_lookup(&u, argv[i]);
-		e = v < 0 ? ENOENT : ubi_lite_remove(&u, v, leb);
-		printf("remove %s (vol %d): %d\n", argv[i], v, e);
+		/* rm:NAME  mk:NAME:LEBS  swap:A:B  wr:NAME:FILE */
+		char op[256], *x, *y = NULL;
+		snprintf(op, sizeof(op), "%s", argv[i]);
+		if ((x = strchr(op, ':')) == NULL) { printf("bad op %s\n", op); return 1; }
+		*x++ = '\0';
+		if ((y = strchr(x, ':')) != NULL) *y++ = '\0';
+		int v = ubi_lite_lookup(&u, x);
+		if (strcmp(op, "rm") == 0) {
+			e = v < 0 ? ENOENT : ubi_lite_remove(&u, v, leb);
+		} else if (strcmp(op, "mk") == 0) {
+			uint32_t id = 0;
+			e = ubi_lite_create(&u, x, atoi(y), &id, leb);
+			v = id;
+		} else if (strcmp(op, "swap") == 0) {
+			int w = ubi_lite_lookup(&u, y);
+			e = v < 0 || w < 0 ? ENOENT : ubi_lite_swap_names(&u, v, w, leb);
+		} else if (strcmp(op, "wr") == 0) {
+			FILE *g = fopen(y, "rb");
+			e = v < 0 || g == NULL ? ENOENT : 0;
+			for (uint32_t l = 0; e == 0; l++) {
+				size_t n = fread(leb, 1, u.ul_leb_size, g);
+				if (n == 0) break;
+				e = ubi_lite_write_leb(&u, v, l, leb, n);
+			}
+			if (g) fclose(g);
+		} else e = EINVAL;
+		printf("%s %s (vol %d): %d\n", op, x, v, e);
 	}
 	/* scan again from the flash, as the next boot would */
 	e = ubi_lite_scan(&u);

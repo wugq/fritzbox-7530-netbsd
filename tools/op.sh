@@ -5,4 +5,6 @@ H=$(dirname "$(readlink -f "$0")"); O=$H/../ops.log
 d=$1; shift
 printf '\n=== %s [PC] %s\n$ %s\n' "$(date +%T)" "$d" "$*" >> "$O"
 "$@" 2>&1 | tee -a "$O"
-exit "${PIPESTATUS[0]}"
+rc=${PIPESTATUS[0]}
+printf '(exit %d)\n' "$rc" >> "$O"
+exit "$rc"

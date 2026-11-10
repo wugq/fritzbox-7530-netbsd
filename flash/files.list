@@ -28,6 +28,8 @@
 /usr/bin/pkill
 /usr/bin/logger
 /usr/bin/cmp
+/usr/bin/cksum
+/usr/bin/od
 /bin/pwd
 /bin/rm
 /bin/rmdir

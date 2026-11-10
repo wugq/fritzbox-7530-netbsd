@@ -37,18 +37,25 @@
  * write its registers), restore the configuration, read the chip ID, and
  * scan the UBI partition (from the device tree's fixed-partitions, label
  * "ubi").  The UBI volumes are character devices: minor number = volume
- * id, e.g. "mknod /dev/ubivol3 c <major> 3".  Only the volume named
- * "config" can be written (a LEB at a time, read-modify-write, as UBI's
- * atomic LEB change); the others hold the boot images and stay read-only.
+ * id, e.g. "mknod /dev/ubivol3 c <major> 3".  Only the volumes named
+ * "config" (the saved settings) and "upgrade" (a new system being
+ * installed, sysupgrade(8)) can be written, a LEB at a time,
+ * read-modify-write, as UBI's atomic LEB change; the others hold boot
+ * images and stay read-only.
  *
  * Minor 255 is the whole chip, read-only: every page with ECC applied, as
  * Linux's /dev/mtdN gives it, for backups.  Pages that fail ECC (a bad
  * block) are returned as read and reported on the console.
  *
- * "sysctl -w hw.qcomqpic0.ubi_remove=<name>" removes a volume, as Linux'
- * ubirmvol does.  The boot loader (U-Boot 2012.07) can create volumes but
- * not remove them: this is what makes room on a box that still has the
- * vendor's system in its UBI partition.
+ * sysctl hw.qcomqpic0:
+ *	ubi_volumes		the volumes: "id name LEBs" per line
+ *	ubi_remove=<name>	remove a volume, as Linux' ubirmvol does.  The
+ *				boot loader (U-Boot 2012.07) cannot: this
+ *				makes room on a box that still has the
+ *				vendor's system in its UBI partition.
+ *	ubi_create="<name> <LEBs>"	create a dynamic volume
+ *	ubi_swap="<name> <name>"	swap two volumes' names, in one
+ *				write of the volume table
  */
 
 #include <sys/cdefs.h>
@@ -100,7 +107,12 @@ CFATTACH_DECL_NEW(qcom_qpic, sizeof(struct qpic_softc),
 
 extern struct cfdriver qcomqpic_cd;
 
-#define UBIVOL_WRITABLE	"config"	/* the only volume we may write */
+/* the volumes that may be written: settings, and a system being installed */
+static bool
+ubivol_writable(const char *name)
+{
+	return strcmp(name, "config") == 0 || strcmp(name, "upgrade") == 0;
+}
 #define UBIVOL_CHIP	255		/* minor: the whole chip, read-only */
 #define QPIC_CHIP_SIZE	(128U * 1024 * 1024)	/* 1 Gbit (id c2 f1) */
 static dev_type_open(ubivol_open);
@@ -186,48 +198,169 @@ qpic_ubi_bad(void *arg, uint32_t block)
 
 /* --- sysctl --------------------------------------------------------- */
 
-/* hw.qcomqpic0.ubi_remove=<name>: remove the volume of that name */
+/*
+ * The writable string sysctls: copy in what was written, then run op on it
+ * with the lock held.  Reading them gives "".
+ */
+static int
+qpic_sysctl_op(SYSCTLFN_ARGS, int (*op)(struct qpic_softc *, char *))
+{
+	struct sysctlnode node = *rnode;
+	struct qpic_softc * const sc = rnode->sysctl_data;
+	char arg[160];
+	int error;
+
+	arg[0] = '\0';
+	node.sysctl_data = arg;
+	node.sysctl_size = sizeof(arg);
+	error = sysctl_lookup(SYSCTLFN_CALL(&node));
+	if (error || newp == NULL)
+		return error;
+	if (!sc->sc_ubi_ok)
+		return ENXIO;
+	mutex_enter(&sc->sc_lock);
+	error = op(sc, arg);
+	mutex_exit(&sc->sc_lock);
+	return error;
+}
+
+/* split "a b" into two words */
+static int
+two_words(char *arg, char **a, char **b)
+{
+	char *sp = strchr(arg, ' ');
+
+	if (sp == NULL)
+		return EINVAL;
+	*sp = '\0';
+	*a = arg;
+	*b = sp + 1;
+	return **a == '\0' || **b == '\0' || strchr(*b, ' ') != NULL ?
+	    EINVAL : 0;
+}
+
+static int
+op_remove(struct qpic_softc *sc, char *name)
+{
+	const int vol = ubi_lite_lookup(&sc->sc_ubi, name);
+	int error;
+
+	if (vol < 0)
+		return ENOENT;
+	error = ubi_lite_remove(&sc->sc_ubi, vol, sc->sc_leb);
+	device_printf(sc->sc_dev, "UBI volume %d \"%s\": %s (%d)\n", vol,
+	    name, error == 0 ? "removed" : "remove failed", error);
+	return error;
+}
+
+static int
+op_create(struct qpic_softc *sc, char *arg)
+{
+	char *name, *num, *end;
+	uint32_t id;
+	int error;
+
+	if ((error = two_words(arg, &name, &num)) != 0)
+		return error;
+	const unsigned long lebs = strtoul(num, &end, 10);
+	if (*end != '\0' || lebs == 0 || lebs > sc->sc_ubi.ul_npebs)
+		return EINVAL;
+	error = ubi_lite_create(&sc->sc_ubi, name, lebs, &id, sc->sc_leb);
+	if (error == 0)
+		device_printf(sc->sc_dev, "UBI volume %u \"%s\": created, "
+		    "%lu LEBs\n", id, name, lebs);
+	else
+		device_printf(sc->sc_dev, "UBI volume \"%s\": create failed "
+		    "(%d)\n", name, error);
+	return error;
+}
+
+static int
+op_swap(struct qpic_softc *sc, char *arg)
+{
+	char *na, *nb;
+	int a, b, error;
+
+	if ((error = two_words(arg, &na, &nb)) != 0)
+		return error;
+	if ((a = ubi_lite_lookup(&sc->sc_ubi, na)) < 0 ||
+	    (b = ubi_lite_lookup(&sc->sc_ubi, nb)) < 0)
+		return ENOENT;
+	error = ubi_lite_swap_names(&sc->sc_ubi, a, b, sc->sc_leb);
+	device_printf(sc->sc_dev, "UBI volumes %d and %d: names \"%s\" and "
+	    "\"%s\" %s (%d)\n", a, b, na, nb,
+	    error == 0 ? "swapped" : "swap failed", error);
+	return error;
+}
+
 static int
 qpic_sysctl_remove(SYSCTLFN_ARGS)
+{
+	return qpic_sysctl_op(SYSCTLFN_CALL(rnode), op_remove);
+}
+
+static int
+qpic_sysctl_create(SYSCTLFN_ARGS)
+{
+	return qpic_sysctl_op(SYSCTLFN_CALL(rnode), op_create);
+}
+
+static int
+qpic_sysctl_swap(SYSCTLFN_ARGS)
+{
+	return qpic_sysctl_op(SYSCTLFN_CALL(rnode), op_swap);
+}
+
+/* hw.qcomqpic0.ubi_volumes: "id name LEBs" per line */
+static int
+qpic_sysctl_volumes(SYSCTLFN_ARGS)
 {
 	struct sysctlnode node = *rnode;
 	struct qpic_softc * const sc = rnode->sysctl_data;
 	struct ubi_lite * const u = &sc->sc_ubi;
-	char vname[64];
-	int vol, error;
+	char *str;
+	size_t o = 0;
+	const size_t len = UBI_LITE_MAXVOL * 96;
+	int error;
 
-	vname[0] = '\0';
-	node.sysctl_data = vname;
-	node.sysctl_size = sizeof(vname);
-	error = sysctl_lookup(SYSCTLFN_CALL(&node));
-	if (error || newp == NULL)
-		return error;
+	str = kmem_zalloc(len, KM_SLEEP);
 	mutex_enter(&sc->sc_lock);
-	if ((vol = ubi_lite_lookup(u, vname)) < 0)
-		error = ENOENT;
-	else
-		error = ubi_lite_remove(u, vol, sc->sc_leb);
+	for (u_int v = 0; sc->sc_ubi_ok && v < UBI_LITE_MAXVOL; v++)
+		if (u->ul_vol[v].v_reserved_pebs != 0)
+			o += snprintf(str + o, len - o, "%u %s %u\n", v,
+			    u->ul_vol[v].v_name, u->ul_vol[v].v_reserved_pebs);
 	mutex_exit(&sc->sc_lock);
-	if (vol >= 0)
-		device_printf(sc->sc_dev, "UBI volume %d \"%s\": %s (%d)\n",
-		    vol, vname, error == 0 ? "removed" : "remove failed", error);
+	node.sysctl_data = str;
+	node.sysctl_size = len;
+	error = sysctl_lookup(SYSCTLFN_CALL(&node));
+	kmem_free(str, len);
 	return error;
 }
 
 static void
 qpic_sysctl_attach(struct qpic_softc *sc)
 {
+	struct sysctllog **log = &sc->sc_sysctllog;
 	const struct sysctlnode *node;
 
-	if (sysctl_createv(&sc->sc_sysctllog, 0, NULL, &node, 0,
-	    CTLTYPE_NODE, device_xname(sc->sc_dev),
-	    SYSCTL_DESCR("NAND controller"), NULL, 0, NULL, 0,
-	    CTL_HW, CTL_CREATE, CTL_EOL) != 0)
+	if (sysctl_createv(log, 0, NULL, &node, 0, CTLTYPE_NODE,
+	    device_xname(sc->sc_dev), SYSCTL_DESCR("NAND controller"),
+	    NULL, 0, NULL, 0, CTL_HW, CTL_CREATE, CTL_EOL) != 0)
 		return;
-	sysctl_createv(&sc->sc_sysctllog, 0, &node, NULL, CTLFLAG_READWRITE,
-	    CTLTYPE_STRING, "ubi_remove",
-	    SYSCTL_DESCR("write a UBI volume's name to remove the volume"),
-	    qpic_sysctl_remove, 0, (void *)sc, 64, CTL_CREATE, CTL_EOL);
+	sysctl_createv(log, 0, &node, NULL, CTLFLAG_READONLY, CTLTYPE_STRING,
+	    "ubi_volumes", SYSCTL_DESCR("UBI volumes: id, name, LEBs"),
+	    qpic_sysctl_volumes, 0, (void *)sc, 0, CTL_CREATE, CTL_EOL);
+	sysctl_createv(log, 0, &node, NULL, CTLFLAG_READWRITE, CTLTYPE_STRING,
+	    "ubi_remove", SYSCTL_DESCR("write a volume's name to remove it"),
+	    qpic_sysctl_remove, 0, (void *)sc, 160, CTL_CREATE, CTL_EOL);
+	sysctl_createv(log, 0, &node, NULL, CTLFLAG_READWRITE, CTLTYPE_STRING,
+	    "ubi_create", SYSCTL_DESCR("write \"name LEBs\" to create a "
+	    "dynamic volume"),
+	    qpic_sysctl_create, 0, (void *)sc, 160, CTL_CREATE, CTL_EOL);
+	sysctl_createv(log, 0, &node, NULL, CTLFLAG_READWRITE, CTLTYPE_STRING,
+	    "ubi_swap", SYSCTL_DESCR("write \"name name\" to swap two "
+	    "volumes' names"),
+	    qpic_sysctl_swap, 0, (void *)sc, 160, CTL_CREATE, CTL_EOL);
 }
 
 /* --- UBI volumes as character devices ------------------------------ */
@@ -247,8 +380,7 @@ ubivol_open(dev_t dev, int flag, int mode, struct lwp *l)
 		return ENXIO;
 	if (vol >= UBI_LITE_MAXVOL || sc->sc_ubi.ul_vol[vol].v_reserved_pebs == 0)
 		return ENXIO;
-	if ((flag & FWRITE) &&
-	    strcmp(sc->sc_ubi.ul_vol[vol].v_name, UBIVOL_WRITABLE) != 0)
+	if ((flag & FWRITE) && !ubivol_writable(sc->sc_ubi.ul_vol[vol].v_name))
 		return EROFS;
 	return 0;
 }
@@ -320,7 +452,7 @@ ubivol_write(dev_t dev, struct uio *uio, int flag)
 	    u->ul_leb_size;
 	int error = 0;
 
-	if (strcmp(u->ul_vol[vol].v_name, UBIVOL_WRITABLE) != 0)
+	if (vol >= UBI_LITE_MAXVOL || !ubivol_writable(u->ul_vol[vol].v_name))
 		return EROFS;
 	while (uio->uio_resid > 0) {
 		if ((uint64_t)uio->uio_offset >= size)

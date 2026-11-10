@@ -71,7 +71,18 @@ for i in range(slots):
     ok(ucrc(r[:168]) == struct.unpack('>I', r[168:])[0], f"vtbl record {i} crc")
     res = struct.unpack('>I', r[:4])[0]
     if res == 0: ok(r == empty, f"vtbl record {i} empty but not all zero"); continue
-    nl = struct.unpack('>H', r[14:16])[0]; vols[i] = (r[16:16+nl].decode(errors='replace'), res)
+    align, dpad = struct.unpack('>II', r[4:12])
+    vtype, upd = r[12], r[13]
+    nl = struct.unpack('>H', r[14:16])[0]
+    name = r[16:144]
+    ok(align >= 1 and dpad == leb % align, f"vtbl record {i} alignment/data_pad")
+    ok(vtype in (1, 2) and upd in (0, 1), f"vtbl record {i} type/upd_marker")
+    ok(0 < nl <= 127 and name[nl] == 0 and 0 not in name[:nl], f"vtbl record {i} name length")
+    vols[i] = (r[16:16+nl].decode(errors='replace'), res)
+names = [v[0] for v in vols.values()]
+ok(len(names) == len(set(names)), f"two volumes with the same name: {names}")
+good = sum(1 for p in range(n) if p != bad)
+ok(sum(v[1] for v in vols.values()) + 2 + 1 + 20 <= good, "volumes reserve more PEBs than there are")
 for (v, l) in lebs:
     if v != LAYOUT: ok(v in vols, f"PEB of volume {v} which the table does not have")
 print("volumes:", vols, "| used PEBs", sum(1 for v in pebs.values() if v), "free", sum(1 for v in pebs.values() if v is None))
