@@ -45,9 +45,14 @@ image_copies() {
 
 # changed_settings -- the settings files that are not the same as the
 # image's copy (or that the image does not have: ssh host keys, ...).
+# /etc/resolv.conf pointing at the router's own resolver is what /etc/rc
+# writes when DNS=yes, not a setting: saved, it would outlive DNS=no.
 changed_settings() {
 	local f
 	for f in $(settings_files); do
+		[ "$f" = etc/resolv.conf ] &&
+		    [ "$(cat /etc/resolv.conf)" = "nameserver 127.0.0.1" ] &&
+		    continue
 		cmp -s "/$f" "/var/run/image/$f" || echo "/$f"
 	done
 }

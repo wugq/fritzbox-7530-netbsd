@@ -42,6 +42,7 @@ struct ubi_peb {
 	uint32_t	pe_vol_id;
 	uint32_t	pe_lnum;
 	uint32_t	pe_data_size;
+	uint32_t	pe_data_crc;
 	uint8_t		pe_state;
 	uint8_t		pe_vol_type;
 	uint8_t		pe_copy_flag;
@@ -72,6 +73,7 @@ struct ubi_lite {
 	uint64_t	ul_max_sqnum;
 	uint32_t	ul_nbad, ul_nfree, ul_nused, ul_ncorrupt;
 	struct ubi_vol	ul_vol[UBI_LITE_MAXVOL];
+	uint32_t	ul_vtbl_copy;		/* the copy ul_vol was read from */
 	/* details of the last failed write, for the OS to log */
 	uint32_t	ul_fail_peb, ul_fail_off;
 	int		ul_fail_error;

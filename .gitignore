@@ -21,3 +21,4 @@ prepare/tftp/
 /private/
 # working instructions for the AI assistant (local)
 /CLAUDE.md
+tools/ubi/ubi-harness

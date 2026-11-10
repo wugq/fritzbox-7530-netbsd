@@ -28,15 +28,17 @@ vol() {
 	    awk -v n="$1" '$2 == n { print $1, $3 }'
 }
 
-# voldev ID -- the device node of a volume (the major is printed at attach)
+# voldev ID -- set DEV to the device node of a volume (the major is
+# printed at attach).  Not used as $(voldev): die would only leave the
+# subshell.
 voldev() {
 	local major
 	[ -f /var/run/dmesg.boot ] || dmesg > /var/run/dmesg.boot
 	major=$(sed -n 's/.*qcomqpic0: volumes: character major \([0-9]*\),.*/\1/p' \
 	    /var/run/dmesg.boot | tail -1)
 	[ -n "$major" ] || die "no qcomqpic0 volumes line in dmesg"
-	[ -c /dev/ubivol$1 ] || mknod /dev/ubivol$1 c $major $1
-	echo /dev/ubivol$1
+	DEV=/dev/ubivol$1
+	[ -c $DEV ] || mknod $DEV c $major $1 || die "mknod $DEV failed"
 }
 
 # is_image FILE -- a FIT image made for this box, and not the USB kernel
@@ -64,7 +66,8 @@ if [ $rollback = yes ]; then
 	[ $# -eq 0 ] || { echo "usage: sysupgrade -r [-n]" >&2; exit 2; }
 	set -- $(vol upgrade)
 	[ -n "$1" ] || die "no UBI volume \"upgrade\": nothing to roll back to"
-	is_image "$(voldev $1)" || die "\"upgrade\" holds no image"
+	voldev $1
+	is_image $DEV || die "\"upgrade\" holds no image"
 	sysctl -w hw.qcomqpic0.ubi_swap="kernel upgrade" >/dev/null ||
 	    die "swapping the names failed (dmesg)"
 	echo "sysupgrade: the previous system is \"kernel\" again"
@@ -92,7 +95,8 @@ else
 	id=$1 lebs=$2
 	[ "$size" -le $((lebs * LEB)) ] ||
 	    die "the image is larger than the volume ($((lebs * LEB)) bytes)"
-	dev=$(voldev $id)
+	voldev $id
+	dev=$DEV
 
 	echo "sysupgrade: writing $dev (\"upgrade\")"
 	dd if="$img" of=$dev bs=$LEB conv=sync 2>/dev/null ||

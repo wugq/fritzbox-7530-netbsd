@@ -23,7 +23,8 @@ After reading this chapter, you will know:
 - how a page is laid out in codewords with ECC;
 - how UBI's on-flash format is read, and how one volume is rewritten safely;
 - how a volume is removed, and how that was tested without a Linux machine;
-- how an update can survive a power failure at any moment.
+- how an update can survive a power failure at any moment, and how to test that by
+  cutting the power on purpose, in a simulation.
 
 Before reading this chapter, you should:
 
@@ -92,8 +93,21 @@ volume holds the volume table (names, sizes) twice. CRCs are UBI's CRC-32 (initi
 the highest sequence number, reads the volume table, and reads LEBs. Writing replaces a
 LEB the way UBI does ("atomic LEB change"): the new contents go to a free PEB under a VID
 header with a higher sequence number, are read back and compared, and only then is the old
-PEB erased and given a new erase counter header. If the power fails in between, both
-copies exist and the next scan picks the newer one. Only dynamic volumes; volumes can be
+PEB erased and given a new erase counter header.
+
+If the power fails in between, both copies exist, and the newer one is not necessarily
+the good one: the VID header is written first, so a copy cut off half-way already has the
+higher sequence number. That is why the VID header also carries the data's size and CRC
+(`copy_flag` set). When the scan finds two copies of a LEB, it checks the newer one's
+data against its CRC and keeps the older one if they do not match, as Linux's
+`compare_lebs()` does. The volume table gets the same care: if copy 0 of the layout
+volume has a record that is not valid, copy 1 is used, as Linux's `process_lvol()`
+does, and a damaged copy is never written back.
+
+A first version had none of this: it wrote no CRC, and took the newer copy whatever it
+held. Cutting the power at simulated moments showed it (`CUT=` in `tools/ubi/`,
+[Section 10.7](#107-cutting-the-power-on-purpose)): a `saveconfig` interrupted while writing left a LEB half new, half old. Only
+dynamic volumes; volumes can be
 removed, created and renamed ([Section 10.5](#105-removing-a-volume),
 [Section 10.6](#106-creating-a-volume-and-swapping-names)); no wear-leveling moves or
 fastmap.
@@ -283,4 +297,32 @@ and `cksum -a sha256` to compare what it reads back with what it was given.
 - Refused: the USB kernel image and 16 MB of random data, with nothing written.
 
 Not tested: a power failure in the middle of a real update.
+
+## 10.7. Cutting the Power on Purpose
+
+The claims "a power failure leaves the old state or the new one" in Sections 10.4 to 10.6
+are easy to write and hard to trust. They can be tested without pulling a plug a thousand
+times: the harness in `tools/ubi/` simulates the flash, and with `CUT=n` in the
+environment the flash stops changing after n program and erase operations, as if the
+power had failed at that moment. The next scan then reads what is there.
+
+Running an operation once to count its flash operations, and then once for every n from
+0 to that count, tries every moment a power failure could hit. After each, the checker
+(`ubi-check.py`, following Linux's rules) must accept the result, and the result must be
+either the old state or the new one:
+
+| operation | flash operations | result after a cut |
+|---|---|---|
+| swapping two names (`sysupgrade`'s switch) | 28 | old names before operation 12, new names from it; never anything else |
+| rewriting two LEBs of `config` (`saveconfig`) | 104 | each LEB old or new, never mixed |
+| removing a 364-LEB volume | 488 | the volume there before operation 12, gone from it; in between, PEBs the table no longer has, which attach erases |
+
+The same sweep against the first version gave mixed LEBs. And a table write cut short,
+followed by another change of the table, now leaves a table UBI accepts; the first
+version returned a bogus error there (a page of 0xff written and read back looks erased
+to the controller, and that was taken for a read error, also fixed).
+
+On the router, the fixed code then wrote an image with `sysupgrade` and the settings with
+`saveconfig`; U-Boot attached the partition with no warning and booted the new image,
+and the settings came back.
 

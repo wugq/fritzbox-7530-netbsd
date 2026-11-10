@@ -46,25 +46,43 @@ for p in range(n):
     if vtype == 1:
         ok(used == 0, f"PEB {p} used_ebs")
         if copy == 0: ok(dsize == 0 and dcrc == 0, f"PEB {p} copy_flag 0 with data_size")
-    pebs[p] = (vol, lnum, sq, copy, do)
+        else: ok(0 < dsize <= PEB - do, f"PEB {p} copy_flag 1 without data_size")
+    pebs[p] = (vol, lnum, sq, copy, do, dsize, dcrc)
 ok(len(seqs) == 1, f"EC headers disagree on offsets/image_seq: {seqs}")
 vo, do, iseq = next(iter(seqs))
 leb = PEB - do
-# newest copy of each LEB
+# the copy of each LEB attach takes (compare_lebs): the newest, unless it
+# has copy_flag and its data does not match its CRC (written only in part)
+def data_ok(p):
+    v = pebs[p]
+    return v[3] == 0 or ucrc(img[p*PEB+do : p*PEB+do+v[5]]) == v[6]
 lebs = {}
 for p, v in pebs.items():
     if v is None: continue
     k = (v[0], v[1])
-    if k not in lebs or v[2] > pebs[lebs[k]][2]: lebs[k] = p
+    if k not in lebs: lebs[k] = p; continue
+    a, b = sorted((lebs[k], p), key=lambda x: pebs[x][2])   # older, newer
+    lebs[k] = b if data_ok(b) else a
 dups = [k for k in lebs if sum(1 for v in pebs.values() if v and (v[0],v[1]) == k) > 1]
-ok(not dups, f"LEBs with two copies (attach must pick one): {dups}")
+if dups: print(f"note: LEBs with two copies (a cut-short change, attach picks one): {len(dups)}")
 slots = min(leb // 172, 128); vsize = -(-slots*172 // PG) * PG
+empty = bytes(168) + struct.pack('>I', ucrc(bytes(168)))
+def table_ok(t):
+    for i in range(slots):
+        r = t[i*172:(i+1)*172]
+        if ucrc(r[:168]) != struct.unpack('>I', r[168:])[0]: return False
+        if struct.unpack('>I', r[:4])[0] == 0 and r != empty: return False
+    return True
 copies = []
 for l in (0, 1):
-    ok((LAYOUT, l) in lebs, f"layout LEB {l} missing")
-    p = lebs[(LAYOUT, l)]; copies.append(img[p*PEB+do : p*PEB+do+vsize])
-ok(copies[0] == copies[1], "layout copies differ")
-empty = bytes(168) + struct.pack('>I', ucrc(bytes(168)))
+    p = lebs.get((LAYOUT, l))
+    copies.append(img[p*PEB+do : p*PEB+do+vsize] if p is not None else None)
+good_copies = [t for t in copies if t is not None and table_ok(t)]
+ok(good_copies, "no valid copy of the volume table")
+if copies[0] != copies[1]:
+    print("note: the two table copies differ; attach takes",
+          "copy 0" if copies[0] is not None and table_ok(copies[0]) else "copy 1", "and repairs the other")
+copies = [good_copies[0]] if good_copies else [bytes(vsize)]
 vols = {}
 for i in range(slots):
     r = copies[0][i*172:(i+1)*172]
@@ -83,8 +101,8 @@ names = [v[0] for v in vols.values()]
 ok(len(names) == len(set(names)), f"two volumes with the same name: {names}")
 good = sum(1 for p in range(n) if p != bad)
 ok(sum(v[1] for v in vols.values()) + 2 + 1 + 20 <= good, "volumes reserve more PEBs than there are")
-for (v, l) in lebs:
-    if v != LAYOUT: ok(v in vols, f"PEB of volume {v} which the table does not have")
+orphans = {v for (v, l) in lebs if v != LAYOUT and v not in vols}
+if orphans: print(f"note: PEBs of volumes the table does not have (attach erases them): {sorted(orphans)}")
 print("volumes:", vols, "| used PEBs", sum(1 for v in pebs.values() if v), "free", sum(1 for v in pebs.values() if v is None))
 if orig:
     # the remaining volumes' data is unchanged; EC of rewritten PEBs went up

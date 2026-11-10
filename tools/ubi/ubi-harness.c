@@ -6,10 +6,13 @@
  * erased.
  *
  *	cc -Iinc -o ubi-harness ubi-harness.c ../../sys/dev/ubi/ubi_lite.c
+ *	./ubi-sweep.sh in.bin badpeb op...	(a power failure at every moment)
  *	./ubi-harness in.bin out.bin badpeb [op ...]
  *
  * op: rm:NAME, mk:NAME:LEBS, swap:NAME:NAME, wr:NAME:FILE (FILE into the
- * volume from LEB 0).
+ * volume from LEB 0).  CUT=n in the environment: the power fails after n
+ * program and erase operations (the later ones change nothing), to see
+ * what the next scan finds.
  *
  * inc/ holds stand-ins for the kernel headers ubi_lite.c includes.
  */
@@ -20,6 +23,9 @@
 #define PG 2048
 #define PPB 64
 static uint8_t *img; static long npebs; static long badpeb = -1;
+/* CUT=n: the power fails after n program/erase operations (later ones do nothing) */
+static long cut = -1, nops;
+static bool dead(void) { return cut >= 0 && nops++ >= cut; }
 static int rd(void *a __attribute__((unused)), uint32_t page, uint8_t *buf) {
 	memcpy(buf, img + (long)page * PG, PG);
 	for (int i = 0; i < PG; i++) if (buf[i] != 0xff) return 0;
@@ -27,16 +33,18 @@ static int rd(void *a __attribute__((unused)), uint32_t page, uint8_t *buf) {
 }
 static int prog(void *a __attribute__((unused)), uint32_t page, const uint8_t *buf) {
 	uint8_t *d = img + (long)page * PG;
+	if (dead()) return 0;
 	for (int i = 0; i < PG; i++) d[i] &= buf[i];	/* NAND: 1 -> 0 only */
 	return 0;
 }
-static int er(void *a __attribute__((unused)), uint32_t b) { memset(img + (long)b * PG * PPB, 0xff, PG * PPB); return 0; }
+static int er(void *a __attribute__((unused)), uint32_t b) { if (dead()) return 0; memset(img + (long)b * PG * PPB, 0xff, PG * PPB); return 0; }
 static bool bad(void *a __attribute__((unused)), uint32_t b) { return (long)b == badpeb; }
 int main(int argc, char **argv) {
 	/* harness in.bin out.bin badpeb name... */
 	FILE *f = fopen(argv[1], "rb"); fseek(f, 0, SEEK_END); long sz = ftell(f); rewind(f);
 	img = malloc(sz); fread(img, 1, sz, f); fclose(f);
 	npebs = sz / (PG * PPB); badpeb = atol(argv[3]);
+	if (getenv("CUT")) cut = atol(getenv("CUT"));
 	struct ubi_lite u = { .ul_read_page = rd, .ul_program_page = prog,
 	    .ul_erase_block = er, .ul_block_bad = bad, .ul_npebs = npebs,
 	    .ul_page_size = PG, .ul_pages_per_peb = PPB };
@@ -73,6 +81,7 @@ int main(int argc, char **argv) {
 		} else e = EINVAL;
 		printf("%s %s (vol %d): %d\n", op, x, v, e);
 	}
+	printf("operations: %ld\n", nops);
 	/* scan again from the flash, as the next boot would */
 	e = ubi_lite_scan(&u);
 	printf("rescan %d: used %u free %u\n", e, u.ul_nused, u.ul_nfree);

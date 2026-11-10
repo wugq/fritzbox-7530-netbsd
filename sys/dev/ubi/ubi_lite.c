@@ -74,6 +74,9 @@ be64(const uint8_t *p)
 	return (uint64_t)be32(p) << 32 | be32(p + 4);
 }
 
+static void drop_torn_copies(struct ubi_lite *);
+static bool vtbl_copy_valid(struct ubi_lite *, uint32_t);
+
 /* UBI's CRC-32: the reflected IEEE polynomial, no final inversion */
 uint32_t
 ubi_crc32(uint32_t crc, const uint8_t *p, size_t n)
@@ -154,6 +157,7 @@ ubi_lite_scan(struct ubi_lite *u)
 		pe->pe_vol_id = be32(v + 8);
 		pe->pe_lnum = be32(v + 12);
 		pe->pe_data_size = be32(v + 20);
+		pe->pe_data_crc = be32(v + 32);
 		pe->pe_sqnum = be64(v + 40);
 		if (pe->pe_sqnum > u->ul_max_sqnum)
 			u->ul_max_sqnum = pe->pe_sqnum;
@@ -163,7 +167,66 @@ ubi_lite_scan(struct ubi_lite *u)
 		return ENOENT;			/* no UBI here */
 	u->ul_leb_size = u->ul_pages_per_peb * u->ul_page_size -
 	    u->ul_data_offset;
+	drop_torn_copies(u);
 	return ubi_lite_read_vtbl(u);
+}
+
+/* UBI's CRC of the first len bytes of a PEB's data; -1 on a read error */
+static int
+peb_data_crc(struct ubi_lite *u, uint32_t p, uint32_t len, uint32_t *crc)
+{
+	uint32_t c = UBI_CRC32_INIT;
+
+	for (uint32_t off = 0; off < len; off += u->ul_page_size) {
+		const uint32_t n = MIN(u->ul_page_size, len - off);
+		int error = ubi_read(u, p, (u->ul_data_offset + off) /
+		    u->ul_page_size, u->ul_buf);
+
+		if (error == UBI_READ_ERASED)
+			memset(u->ul_buf, 0xff, u->ul_page_size);
+		else if (error != 0)
+			return -1;
+		c = ubi_crc32(c, u->ul_buf, n);
+	}
+	*crc = c;
+	return 0;
+}
+
+/*
+ * Two PEBs for one LEB: an atomic LEB change was cut short, after the new
+ * copy's VID header was written but before the old copy was erased.  The
+ * newer one wins, as in ubi_lite_find(), unless it carries a data CRC
+ * (copy_flag) that its data does not match: then the power failed while
+ * it was being written, and the older copy is the good one.  This is what
+ * Linux' compare_lebs() does.  The torn copy is marked corrupt.
+ */
+static void
+drop_torn_copies(struct ubi_lite *u)
+{
+	for (uint32_t p = 0; p < u->ul_npebs; p++) {
+		struct ubi_peb *pe = &u->ul_peb[p];
+		bool older = false;
+		uint32_t crc;
+
+		if (pe->pe_state != UBI_PEB_USED || !pe->pe_copy_flag)
+			continue;
+		for (uint32_t q = 0; q < u->ul_npebs && !older; q++) {
+			const struct ubi_peb *qe = &u->ul_peb[q];
+
+			older = q != p && qe->pe_state == UBI_PEB_USED &&
+			    qe->pe_vol_id == pe->pe_vol_id &&
+			    qe->pe_lnum == pe->pe_lnum &&
+			    qe->pe_sqnum < pe->pe_sqnum;
+		}
+		if (!older || pe->pe_data_size > u->ul_leb_size)
+			continue;
+		if (peb_data_crc(u, p, pe->pe_data_size, &crc) != 0 ||
+		    crc != pe->pe_data_crc) {
+			pe->pe_state = UBI_PEB_CORRUPT;
+			u->ul_nused--;
+			u->ul_ncorrupt++;
+		}
+	}
 }
 
 /* The PEB holding (vol_id, lnum), or -1 if the LEB is unmapped. */
@@ -216,38 +279,40 @@ ubi_lite_read_leb(struct ubi_lite *u, uint32_t vol_id, uint32_t lnum,
 	return 0;
 }
 
-/* The volume table: from the layout volume's LEB 0 (or LEB 1). */
+/*
+ * The volume table: from the layout volume's LEB 0, or LEB 1 if LEB 0 is
+ * missing or has a record that is not valid (a write of the table cut
+ * short), as Linux' process_lvol() does.
+ */
 int
 ubi_lite_read_vtbl(struct ubi_lite *u)
 {
 	uint8_t rec[UBI_VTBL_RECORD_SIZE];
-	int found = 0;
+	uint32_t copy;
 
 	memset(u->ul_vol, 0, sizeof(u->ul_vol));
-	for (uint32_t copy = 0; copy < 2 && !found; copy++) {
-		if (ubi_lite_find(u, UBI_LAYOUT_VOLUME_ID, copy) < 0)
-			continue;
-		for (uint32_t i = 0; i < UBI_LITE_MAXVOL; i++) {
-			struct ubi_vol *vol = &u->ul_vol[i];
+	for (copy = 0; copy < UBI_LAYOUT_LEBS; copy++)
+		if (vtbl_copy_valid(u, copy))
+			break;
+	if (copy == UBI_LAYOUT_LEBS)
+		return ENOENT;
+	for (uint32_t i = 0; i < UBI_LITE_MAXVOL; i++) {
+		struct ubi_vol *vol = &u->ul_vol[i];
 
-			if (ubi_lite_read_leb(u, UBI_LAYOUT_VOLUME_ID, copy,
-			    i * UBI_VTBL_RECORD_SIZE, rec, sizeof(rec)) != 0)
-				break;
-			if (ubi_crc32(UBI_CRC32_INIT, rec, sizeof(rec) - 4) !=
-			    be32(rec + sizeof(rec) - 4))
-				continue;
-			vol->v_reserved_pebs = be32(rec);
-			if (vol->v_reserved_pebs == 0)
-				continue;
-			vol->v_type = rec[12];
-			const u_int nl = MIN((uint32_t)(rec[14] << 8 | rec[15]),
-			    sizeof(vol->v_name) - 1);
-			memcpy(vol->v_name, rec + 16, nl);
-			vol->v_name[nl] = '\0';
-			found = 1;
-		}
+		if (ubi_lite_read_leb(u, UBI_LAYOUT_VOLUME_ID, copy,
+		    i * UBI_VTBL_RECORD_SIZE, rec, sizeof(rec)) != 0)
+			return EIO;
+		vol->v_reserved_pebs = be32(rec);
+		if (vol->v_reserved_pebs == 0)
+			continue;
+		vol->v_type = rec[12];
+		const u_int nl = MIN((uint32_t)(rec[14] << 8 | rec[15]),
+		    sizeof(vol->v_name) - 1);
+		memcpy(vol->v_name, rec + 16, nl);
+		vol->v_name[nl] = '\0';
 	}
-	return found ? 0 : ENOENT;
+	u->ul_vtbl_copy = copy;
+	return 0;
 }
 
 /* volume id by name, or -1 */
@@ -393,6 +458,18 @@ ubi_write_leb(struct ubi_lite *u, uint32_t vol_id, uint32_t lnum,
 	v[7] = compat;
 	put_be32(v + 8, vol_id);
 	put_be32(v + 12, lnum);
+	const uint32_t data_crc = len > 0 ?
+	    ubi_crc32(UBI_CRC32_INIT, data, len) : 0;
+	if (len > 0) {
+		/*
+		 * copy_flag, data size and CRC: if the power fails before
+		 * the old copy is erased, the scan can tell whether this
+		 * one was written whole (drop_torn_copies()).
+		 */
+		v[6] = 1;
+		put_be32(v + 20, len);
+		put_be32(v + 32, data_crc);
+	}
 	put_be64(v + 40, u->ul_max_sqnum + 1);
 	put_be32(v + 60, ubi_crc32(UBI_CRC32_INIT, v, UBI_HDR_SIZE - 4));
 	error = ubi_program(u, p, u->ul_vid_offset / u->ul_page_size, h);
@@ -410,6 +487,11 @@ ubi_write_leb(struct ubi_lite *u, uint32_t vol_id, uint32_t lnum,
 		const uint32_t n = MIN(u->ul_page_size, len - off);
 		error = ubi_read(u, p, (u->ul_data_offset + off) /
 		    u->ul_page_size, h);
+		if (error == UBI_READ_ERASED) {
+			/* a page of data that is all 0xff reads as erased */
+			memset(h, 0xff, u->ul_page_size);
+			error = 0;
+		}
 		u->ul_fail_peb = p;
 		u->ul_fail_off = off;
 		u->ul_fail_error = error;
@@ -432,10 +514,11 @@ ubi_write_leb(struct ubi_lite *u, uint32_t vol_id, uint32_t lnum,
 	u->ul_max_sqnum++;
 	pe->pe_state = UBI_PEB_USED;
 	pe->pe_vol_type = 1;
-	pe->pe_copy_flag = 0;
+	pe->pe_copy_flag = len > 0;
 	pe->pe_vol_id = vol_id;
 	pe->pe_lnum = lnum;
-	pe->pe_data_size = 0;
+	pe->pe_data_size = len;
+	pe->pe_data_crc = data_crc;
 	pe->pe_sqnum = u->ul_max_sqnum;
 
 	/* the old copy goes back to the free pool */
@@ -478,19 +561,41 @@ vtbl_rec_crc(uint8_t *rec)
 	    ubi_crc32(UBI_CRC32_INIT, rec, UBI_VTBL_RECORD_SIZE - 4));
 }
 
-/* read the table (copy 0, else copy 1) into buf (room for one LEB) */
+/*
+ * A copy of the table UBI would accept: present, every record's CRC
+ * right, and every unused record exactly the empty one (Linux'
+ * vtbl_check()).
+ */
+static bool
+vtbl_copy_valid(struct ubi_lite *u, uint32_t copy)
+{
+	uint8_t rec[UBI_VTBL_RECORD_SIZE], empty[UBI_VTBL_RECORD_SIZE];
+
+	if (ubi_lite_find(u, UBI_LAYOUT_VOLUME_ID, copy) < 0)
+		return false;
+	memset(empty, 0, sizeof(empty));
+	vtbl_rec_crc(empty);
+	for (uint32_t i = 0; i < vtbl_slots(u); i++) {
+		if (ubi_lite_read_leb(u, UBI_LAYOUT_VOLUME_ID, copy,
+		    i * UBI_VTBL_RECORD_SIZE, rec, sizeof(rec)) != 0 ||
+		    !vtbl_rec_ok(rec) ||
+		    (be32(rec) == 0 && memcmp(rec, empty, sizeof(rec)) != 0))
+			return false;
+	}
+	return true;
+}
+
+/*
+ * Read the table into buf (room for one LEB): the copy ubi_lite_read_vtbl()
+ * chose, which UBI would accept, so a damaged copy is never written back.
+ */
 static int
 vtbl_load(struct ubi_lite *u, uint8_t *buf)
 {
-	uint32_t copy;
-
-	for (copy = 0; copy < UBI_LAYOUT_LEBS; copy++)
-		if (ubi_lite_find(u, UBI_LAYOUT_VOLUME_ID, copy) >= 0)
-			break;
-	if (copy == UBI_LAYOUT_LEBS)
-		return ENOENT;
-	return ubi_lite_read_leb(u, UBI_LAYOUT_VOLUME_ID, copy, 0, buf,
-	    vtbl_size(u));
+	if (!vtbl_copy_valid(u, u->ul_vtbl_copy))
+		return EIO;
+	return ubi_lite_read_leb(u, UBI_LAYOUT_VOLUME_ID, u->ul_vtbl_copy, 0,
+	    buf, vtbl_size(u));
 }
 
 /*
