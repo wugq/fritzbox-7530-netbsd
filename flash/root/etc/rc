@@ -125,13 +125,16 @@ if [ "${DNS:-no}" = yes ]; then
 	pgrep -qx unbound && echo "nameserver 127.0.0.1" > /etc/resolv.conf
 fi
 # Firewall and NAT (/etc/npf.conf): $lan_net from LAN_ADDR, and only the
-# parts that are switched on
+# parts that are switched on.  Without PPPoE there is no pppoe0, and npfctl
+# would warn about it at every boot: its lines go too.
 if [ "${FIREWALL:-no}" = yes ] || [ "$NAT" = yes ]; then
 	{
 		grep -q '^\$lan_net' /etc/npf.conf ||
 		    echo "\$lan_net = $(lan_net "$LAN_ADDR")"
 		sed -e "$([ "$NAT" = yes ] || echo '/# NAT$/d')" \
 		    -e "$([ "${FIREWALL:-no}" = yes ] || echo '/# FIREWALL$/d')" \
+		    -e "$([ "$WAN_MODE" = pppoe ] || echo '/^group "wan-pppoe"/,/^}/d')" \
+		    -e "$([ "$WAN_MODE" = pppoe ] || echo '/^[^#]*pppoe0/d')" \
 		    /etc/npf.conf
 	} > /var/run/npf.conf
 	npfctl reload /var/run/npf.conf && npfctl start
