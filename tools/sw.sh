@@ -16,7 +16,7 @@ where() {
 	last=$(tail -c 3000 "$L" | tr -d '\000\r' | grep -av '^[[:space:]]*$' |
 	    tail -1)
 	case $last in
-	*"(FRITZ7530) #"*)	echo "U-Boot" ;;
+	"(FRITZ7530) #"*)	echo "U-Boot" ;;
 	*"Eva_AVM >"*)		echo "EVA" ;;
 	*"login:"*)		echo "NetBSD, login prompt" ;;
 	*"Password:"*)		echo "NetBSD, password prompt" ;;

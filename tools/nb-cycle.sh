@@ -20,7 +20,9 @@ get_uboot() {
 	while (( SECONDS - t0 < 240 )); do
 		printf ' ' > /dev/ttyUSB0; sleep 0.05
 		local out; out=$(since $n | tail -c 4000 | tr -d "\000")
-		if grep -aq "(FRITZ7530) #" <<<"$out"; then return 0; fi
+		# the prompt at the start of a line: the motd's "NetBSD 11.1
+		# (FRITZ7530) #0: ..." (the USB kernel's name) must not match
+		if tr -d '\r' <<<"$out" | grep -aq '^(FRITZ7530) #'; then return 0; fi
 		if grep -aq "Eva_AVM >" <<<"$out"; then
 			# AVM's bootloader caught our keypresses: let it go on to U-Boot
 			n=$(size); printf '\rgo\r' > /dev/ttyUSB0; sleep 1
