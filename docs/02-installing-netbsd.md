@@ -185,7 +185,7 @@ Continue with [Chapter 3](03-configuring-the-router.md) to set the router up.
 With OpenWrt installed ([Section 1.7](01-installing-uboot.md#17-the-other-way-through-openwrt)),
 the volume named `kernel` is OpenWrt's. NetBSD goes into a volume of its own, and the
 names are swapped afterwards; OpenWrt stays, as a second system to boot
-([Section 4.3](04-updating-and-recovery.md#43-booting-openwrt)).
+([Section 4.4](04-updating-and-recovery.md#44-booting-openwrt)).
 
 > [!WARNING]
 > This writes the flash. OpenWrt keeps its kernel and root file system, but its

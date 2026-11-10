@@ -22,7 +22,8 @@ After reading this chapter, you will know:
 - how the IPQ4019's NAND controller (QPIC) is driven without its DMA engine;
 - how a page is laid out in codewords with ECC;
 - how UBI's on-flash format is read, and how one volume is rewritten safely;
-- how a volume is removed, and how that was tested without a Linux machine.
+- how a volume is removed, and how that was tested without a Linux machine;
+- how an update can survive a power failure at any moment.
 
 Before reading this chapter, you should:
 
@@ -92,9 +93,10 @@ the highest sequence number, reads the volume table, and reads LEBs. Writing rep
 LEB the way UBI does ("atomic LEB change"): the new contents go to a free PEB under a VID
 header with a higher sequence number, are read back and compared, and only then is the old
 PEB erased and given a new erase counter header. If the power fails in between, both
-copies exist and the next scan picks the newer one. Only dynamic volumes; a volume can
-be removed ([Section 10.5](#105-removing-a-volume)); no volume creation, wear-leveling
-moves or fastmap.
+copies exist and the next scan picks the newer one. Only dynamic volumes; volumes can be
+removed, created and renamed ([Section 10.5](#105-removing-a-volume),
+[Section 10.6](#106-creating-a-volume-and-swapping-names)); no wear-leveling moves or
+fastmap.
 
 The volumes are character devices (minor = volume id):
 
@@ -103,7 +105,10 @@ mknod /dev/ubivol4 c <major> 4          # the major is printed at attach
 dd if=/dev/ubivol4 bs=126976 count=116 | head -c <size> | sha256
 ```
 
-**Only the volume named `config` can be written**; the others hold boot images. Tested:
+**Only the volumes named `config` and `upgrade` can be written**: the saved settings, and
+a new system being installed by `sysupgrade`
+([Section 4.2](04-updating-and-recovery.md#42-updating-netbsd)); the others hold boot
+images, the running one among them. Tested:
 opening the `kernel` volume for writing fails with `EROFS` ("Read-only file system"), and
 its contents stay identical to the installed image.
 
@@ -210,3 +215,72 @@ Without root on the PC there is no `nandsim` and no Linux UBI to try it on, so:
 
 What was not tested: removing AVM's volumes on the router itself, since this box no
 longer has them, and a power failure in the middle.
+
+## 10.6. Creating a Volume and Swapping Names
+
+### An update that a power failure cannot break
+
+Before `sysupgrade`, updating meant `ubi write` into the volume `kernel` from U-Boot: the
+running system overwritten in place. Cut the power half-way and `kernel` is half old,
+half new, and nothing in the flash boots. The usual answer, in phones and in routers,
+is two slots, **A/B**: write the new system next to the old one, then switch, with the
+switch a single step that either has happened or has not.
+
+Here the switch is free. U-Boot boots the volume *named* `kernel`, and a name is a field
+of a record in the volume table. Swapping the names of two volumes is one write of the
+table, and the table write is already atomic in the sense that matters
+([Section 10.5](#105-removing-a-volume)): copy 0 is written first and attach trusts copy
+0, so after a power failure the table is either the old one or the new one. So
+`sysupgrade` writes the image into `upgrade`, checks it, and swaps the names of
+`kernel` and `upgrade`. Before the swap the old system boots; after it, the new one;
+the old one is still there, under the name `upgrade`.
+
+### Creating a volume
+
+`upgrade` has to exist first. U-Boot can create it, but asking the owner to do that at the
+serial console would defeat the purpose, so `ubi_lite_create()` does it: find an unused
+record (all zeros with a valid CRC), fill it in (`reserved_pebs`, alignment 1, data pad 0,
+dynamic, the name), write the table.
+
+The one real question is **space**. UBI refuses to attach a device whose volumes reserve
+more PEBs than it has, after its own reserves: the two layout PEBs, one for
+wear-leveling, and a pool for replacing blocks that go bad. Get this wrong and U-Boot no
+longer attaches the partition at all. The size of that pool differs between UBI
+versions: U-Boot 2012.07 keeps 1% of the PEBs (it prints "number of PEBs reserved for bad
+PEB handling: 8"), Linux since 3.7 keeps 20 per 1024 PEBs of the whole chip (AVM's
+Linux kept 19). `ubi_lite` counts 20, the larger, and asks for a margin of 8 more PEBs
+besides, so that any of them accepts the result.
+
+A detail: a removal interrupted by a power failure can leave PEBs that carry a volume id
+the table no longer has. Linux and U-Boot erase those at attach; `ubi_lite` does not, so
+it erases them before giving their id to a new volume, or they would show up as the new
+volume's contents.
+
+### The interface
+
+Three more sysctls next to `ubi_remove`, all writing the table under the driver's lock:
+
+```
+# sysctl -n hw.qcomqpic0.ubi_volumes        # id, name, LEBs
+# sysctl -w hw.qcomqpic0.ubi_create="upgrade 133"
+# sysctl -w hw.qcomqpic0.ubi_swap="kernel upgrade"
+```
+
+`sysupgrade` (a shell script, `/usr/sbin/sysupgrade`) uses them, `dd` to write the volume,
+and `cksum -a sha256` to compare what it reads back with what it was given.
+
+### Verified
+
+- In the PC harness (`tools/ubi/`), on a backup of the router: remove `test`, create
+  `upgrade` (133 LEBs), write the image into it, swap with `kernel`. The checker passes,
+  and the volume named `kernel` afterwards holds exactly the image, the one named
+  `upgrade` exactly the old `kernel` volume. Creating a 600-LEB volume fails with
+  `ENOSPC`; swapping with a name that does not exist, `ENOENT`.
+- On the router: from #10 to #11 with `sysupgrade` (23 seconds); U-Boot then attaches
+  with no warning, 7 volumes, 399 PEBs available (532 before, minus the 133 of
+  `upgrade`), and boots #11. `sysupgrade -r` brought #10 back, and (run from #11 booted
+  from RAM, since #10 has no `sysupgrade`) #11 again.
+- Refused: the USB kernel image and 16 MB of random data, with nothing written.
+
+Not tested: a power failure in the middle of a real update.
+

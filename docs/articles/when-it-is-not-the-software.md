@@ -43,7 +43,7 @@ A procedure, not a patch: for a full power cycle, **unplug the adapter too**. Pu
 router's power, unplug the adapter from the PC, wait ten seconds, plug the router in,
 then the adapter. The next power cycle worked at once, and this is now in
 [Chapter 1](../01-installing-uboot.md#13-connecting-the-serial-console) and
-[Chapter 4](../04-updating-and-recovery.md#44-when-the-router-does-not-boot).
+[Chapter 4](../04-updating-and-recovery.md#45-when-the-router-does-not-boot).
 
 > [!NOTE]
 > **A detail that does not fit is often the answer.** An LED that stays on without power

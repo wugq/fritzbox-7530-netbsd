@@ -17,7 +17,8 @@ on the router (NetBSD or OpenWrt), `(FRITZ7530) #` at the U-Boot prompt.
 3. [Configuring the Router](03-configuring-the-router.md)
    - ssh; a home router behind a modem; keeping settings; `router.conf`; LEDs, buttons, logs
 4. [Updating and Recovery](04-updating-and-recovery.md)
-   - updating; booting OpenWrt; a router that does not boot
+   - updating over ssh (`sysupgrade`) and going back; updating from U-Boot; booting
+     OpenWrt; a router that does not boot
 
 ## Part II. How It Works
 
