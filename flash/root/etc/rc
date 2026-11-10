@@ -64,21 +64,40 @@ hostname "$HOSTNAME"
 # --- network
 ifconfig lo0 inet 127.0.0.1 netmask 255.0.0.0 up
 ifconfig qcomedma0 inet "$LAN_ADDR" up
+# IPv6 from the provider: only over a WAN port, and not over PPPoE (yet)
+wan6=no
+[ "${WAN_IPV6:-no}" = yes ] && [ "${WAN_PORT:-0}" != 0 ] &&
+    [ "$WAN_MODE" != pppoe ] && wan6=yes
+[ "${WAN_IPV6:-no}" = yes ] && [ "$WAN_MODE" = pppoe ] &&
+    echo "flash edition: WAN_IPV6 with WAN_MODE=pppoe is not supported yet"
 if [ "${WAN_PORT:-0}" != 0 ]; then
 	# one switch port becomes the WAN: 802.1Q VLAN 2, tagged to the CPU
 	sysctl -qw hw.qcomess0.wan_port="$WAN_PORT"
 	ifconfig vlan2 create
 	ifconfig vlan2 vlan 2 vlanif qcomedma0
 	ifconfig vlan2 up
+	# dhcpcd(8) does DHCP (WAN_MODE=dhcp) and IPv6 (WAN_IPV6=yes): the
+	# router advertisements of the WAN, DHCPv6 for an address (ia_na)
+	# and for a prefix (ia_pd), whose first /64 (sla 0) goes on the LAN
+	# with the address ::1.  The provider knows the router by its DUID:
+	# DUID-LL, made from the MAC address, is the same at every boot
+	# (the default DUID-LLT has the time in it, and /var/db is in RAM).
+	# With our own resolver (DNS=yes), it leaves /etc/resolv.conf alone.
+	if [ $wan6 = yes ]; then
+		sysctl -qw net.inet6.ip6.forwarding=1
+		printf 'duid ll\nia_na 1\nia_pd 2 qcomedma0/0/64/1\n' \
+		    > /var/run/dhcpcd.conf
+	else
+		echo noipv6 > /var/run/dhcpcd.conf
+	fi
+	dhcpcd_resolv=
+	[ "${DNS:-no}" = yes ] && dhcpcd_resolv="-C resolv.conf"
 	case "$WAN_MODE" in
-	dhcp)	# with our own resolver, keep /etc/resolv.conf pointing at it
-		if [ "${DNS:-no}" = yes ]; then
-			dhcpcd -b -q -C resolv.conf vlan2
-		else
-			dhcpcd -b -q vlan2
-		fi ;;
+	dhcp)	dhcpcd -b -q -f /var/run/dhcpcd.conf $dhcpcd_resolv vlan2 ;;
 	static)	ifconfig vlan2 inet "$WAN_ADDR"
-		[ -n "$WAN_GW" ] && route -q add default "$WAN_GW" ;;
+		[ -n "$WAN_GW" ] && route -q add default "$WAN_GW"
+		[ $wan6 = yes ] &&
+		    dhcpcd -b -q -6 -f /var/run/dhcpcd.conf $dhcpcd_resolv vlan2 ;;
 	pppoe)	# PPP over Ethernet on the WAN port (a DSL or fibre modem);
 		# the link comes up when the provider answers
 		ifconfig pppoe0 create
@@ -92,15 +111,24 @@ if [ "${WAN_PORT:-0}" != 0 ]; then
 fi
 sysctl -qw net.inet.ip.forwarding=1
 
-# IPv6 on the LAN: an address and router advertisements (rtadvd).  The
-# WAN has no IPv6, so the router does not announce itself as the default
-# router (rltime 0), only the prefix and itself as DNS server (RDNSS).
-if [ -n "${LAN_ADDR6:-}" ]; then
-	ifconfig qcomedma0 inet6 "$LAN_ADDR6" alias
+# IPv6 on the LAN: router advertisements (rtadvd) of the prefixes on
+# qcomedma0, LAN_ADDR6's and the one the provider delegates.  The second
+# comes later, when dhcpcd gets it: /etc/dhcpcd.exit-hook then makes
+# rtadvd read the addresses again (SIGHUP).  rtadvd reads its
+# configuration again too, after it has chrooted to /var/chroot/rtadvd:
+# the file has to be there as well.  Without IPv6 on the WAN the router
+# does not announce itself as the default router (rltime 0).  With
+# DNS=yes, it announces itself as DNS server (RDNSS) at LAN_ADDR6.
+if [ -n "${LAN_ADDR6:-}" ] || [ $wan6 = yes ]; then
+	[ -n "${LAN_ADDR6:-}" ] && ifconfig qcomedma0 inet6 "$LAN_ADDR6" alias
 	sysctl -qw net.inet6.ip6.forwarding=1
-	rdnss=
-	[ "${DNS:-no}" = yes ] && rdnss=":rdnss=\"${LAN_ADDR6%/*}\""
-	printf 'qcomedma0:\\\n\t:rltime#0%s:\n' "$rdnss" > /var/run/rtadvd.conf
+	ra=
+	[ $wan6 = yes ] || ra=":rltime#0"
+	[ "${DNS:-no}" = yes ] && [ -n "${LAN_ADDR6:-}" ] &&
+	    ra="$ra:rdnss=\"${LAN_ADDR6%/*}\""
+	printf 'qcomedma0:\\\n\t%s:\n' "${ra:-:}" > /var/run/rtadvd.conf
+	mkdir -p /var/chroot/rtadvd/var/run
+	cp /var/run/rtadvd.conf /var/chroot/rtadvd/var/run/
 	rtadvd -c /var/run/rtadvd.conf qcomedma0
 fi
 

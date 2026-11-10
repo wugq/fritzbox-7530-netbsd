@@ -1,0 +1,15 @@
+# /etc/dhcpcd.exit-hook -- read by dhcpcd-run-hooks after each dhcpcd(8)
+# event (the variables are in dhcpcd-run-hooks(8)).
+#
+# When the prefix the provider delegates (WAN_IPV6=yes in router.conf)
+# appears, changes or goes away, dhcpcd changes the address of the LAN,
+# qcomedma0, and rtadvd(8) has to announce the new prefix.  rtadvd should
+# notice that by itself, from the routing socket, but on this system it
+# does not: SIGHUP makes it read the addresses of the interface again.
+
+lan_prefixes=$(ifconfig qcomedma0 inet6 2>/dev/null |
+    awk '$1 == "inet6" && $2 !~ /^fe80:/ { print $2 }')
+if [ "$lan_prefixes" != "$(cat /var/run/rtadvd.prefixes 2>/dev/null)" ]; then
+	echo "$lan_prefixes" > /var/run/rtadvd.prefixes
+	pkill -HUP -x rtadvd || :	# none yet: /etc/rc starts it later
+fi

@@ -47,6 +47,7 @@
 /usr/bin/grep
 /usr/bin/egrep
 /usr/bin/head
+/usr/bin/readlink
 /usr/bin/id
 /usr/bin/less
 /usr/bin/more
@@ -98,6 +99,9 @@
 
 # --- networking
 /sbin/dhcpcd
+/libexec/dhcpcd-run-hooks		# dhcpcd's hooks: 20-resolv.conf puts the
+/libexec/dhcpcd-hooks/20-resolv.conf	# provider's DNS servers in resolv.conf
+/var/chroot/dhcpcd			# the chroot of dhcpcd's unprivileged part
 /sbin/ifconfig
 /sbin/npfctl
 /lib/npf/ext_normalize.so

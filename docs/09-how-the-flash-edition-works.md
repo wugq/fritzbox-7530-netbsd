@@ -119,7 +119,7 @@ read in one page:
 2. restore the saved settings (below) and read `/etc/router.conf`;
 3. network: the LAN on `qcomedma0`; the WAN port as `vlan2` (the switch tags it, see
    [Chapter 7](07-how-the-drivers-work.md#vlans-and-a-wan-port)) with a static address, `dhcpcd` or
-   `pppoe0`; IPv6 on the LAN with `rtadvd`;
+   `pppoe0`; IPv6 from the WAN with `dhcpcd` and on the LAN with `rtadvd`;
 4. services by option: `npf` (firewall and NAT), `dhcpd`, `unbound`, `ntpd`; always `syslogd`,
    `sshd` (host keys made if missing), `powerd` (buttons);
 5. info LED green.
@@ -156,7 +156,10 @@ makes `/dev/ubivolN`.
   NPF tracks every connection that leaves (`pass stateful out`) and lets its replies
   back in; of anything else coming in, only ICMP passes (ping, and the "too big" errors
   path MTU discovery depends on). So the router's ssh and NTP, and the LAN, are not
-  reachable from the WAN. NAT masquerades the LAN behind the WAN address. On `pppoe0`
+  reachable from the WAN. One more rule lets DHCPv6's replies in (UDP from port 547 to
+  port 546 of a link-local address): the request goes to the multicast address
+  `ff02::1:2` and the reply comes from the server's own address, so the state of the
+  request does not match it. NAT masquerades the LAN behind the WAN address. On `pppoe0`
   the TCP MSS is also clamped to 1452, since PPPoE's MTU is 1492 and LAN hosts send
   1500-byte packets. `/etc/rc` loads a copy of `npf.conf`: it adds `$lan_net` from
   `LAN_ADDR` and leaves out the lines marked `# NAT` or `# FIREWALL` whose option is
@@ -171,10 +174,27 @@ makes `/dev/ubivolN`.
   the LAN only. `/etc/rc` writes the addresses into `/var/run/unbound.local.conf`;
   `<HOSTNAME>.lan` resolves to the router. No DNSSEC validation: it needs a maintained
   trust anchor and a set clock, and the router has no battery-backed clock.
-- **IPv6 on the LAN**: router advertisements with the prefix and the router as DNS
-  server (RDNSS). The WAN has no IPv6 yet, so the router does not announce itself as a
-  default router (router lifetime 0), and clients keep their IPv6 internet traffic
-  elsewhere.
+- **IPv6 from the provider** (`WAN_IPV6=yes`): `dhcpcd` on `vlan2` does three jobs.
+  It solicits router advertisements, and with them configures an address (SLAAC) and
+  the default route; it asks DHCPv6 for an address (`ia_na`); and it asks for a prefix
+  (`ia_pd 2 qcomedma0/0/64/1`: of the delegated prefix, the /64 number 0 goes on
+  `qcomedma0`, with the address `::1`). For the rest of the delegated prefix it adds a
+  reject route on `lo0`, so that packets to addresses no LAN uses do not go back and
+  forth between the router and the provider. `/etc/rc` writes this into
+  `/var/run/dhcpcd.conf`. The provider recognises the router by its DUID. The default
+  kind, DUID-LLT, contains the time it was made and would be made anew at each boot,
+  since `/var/db` is in RAM, and each boot could bring a new prefix. `duid ll` makes it
+  from the MAC address instead, the same at every boot.
+- **IPv6 on the LAN**: `rtadvd` announces the prefixes on `qcomedma0`: the delegated one
+  and `LAN_ADDR6`'s. With `DNS=yes` and `LAN_ADDR6` set, it announces the router as DNS
+  server (RDNSS). Without IPv6 on the WAN the router does not announce itself as a
+  default router (router lifetime 0), and the clients keep their IPv6 internet traffic
+  elsewhere. The delegated prefix arrives seconds after `rtadvd` has started. The
+  routing socket tells `rtadvd` about the new address, but on this system it does not add
+  the prefix (see Pitfalls). So `/etc/dhcpcd.exit-hook`, which dhcpcd runs after each
+  event, compares the LAN's prefixes with the last ones it saw and sends `rtadvd` a
+  `SIGHUP`. `rtadvd` then reads its configuration and the interface's addresses again,
+  announcing the old set a few times with router lifetime 0 first.
 - **PPPoE**: `pppoe0` over `vlan2`, configured with `pppoectl`. Tested against FreeBSD's
   `pppoed` (session, CHAP, address from IPCP); NAT over it not yet end to end.
 - **Time** (`NTP=yes`): `ntpd` with NetBSD's pool servers (`/etc/ntp.conf`), started
@@ -200,6 +220,25 @@ makes `/dev/ubivolN`.
 - After removing `rootfs_data`, OpenWrt runs without saved settings until its overlay
   is recreated (`ubimkvol /dev/ubi0 -N rootfs_data -m`, which takes the rest of the
   space).
+- **`rtadvd` does not pick up a prefix added after it started.** The kernel sends the
+  `RTM_ADD` of the new interface route (`route monitor` shows it, with a link-level
+  gateway and a netmask, as `rtadvd`'s filter wants), and `rtadvd -d -d -D` logs that it
+  received it, but its prefix list does not change. Why is still open. The work-around is
+  the dhcpcd hook above.
+- **`rtadvd` reads its configuration again inside its chroot.** On `SIGHUP` it opens
+  the file given with `-c` after it has chrooted to `/var/chroot/rtadvd`. Without a copy
+  there, it falls back to the defaults and drops `rltime#0` and `rdnss`. `/etc/rc`
+  puts a copy at `/var/chroot/rtadvd/var/run/rtadvd.conf`.
+- **A changed prefix is not withdrawn on the LAN.** When the provider delegates a new
+  prefix, `rtadvd` stops announcing the old one, but it does not announce it with
+  lifetime 0. Hosts keep their old addresses, as deprecated only after `rtadvd`'s
+  default preferred lifetime of 7 days. They prefer addresses from the newest prefix,
+  but connections from the old one fail.
+- **dhcpcd's hooks.** Without `/libexec/dhcpcd-run-hooks` and its
+  `dhcpcd-hooks/20-resolv.conf`, dhcpcd never writes the provider's DNS servers into
+  `/etc/resolv.conf` (it logs "No such file or directory" for the script). With
+  `DNS=yes` that does not matter, since the router resolves by itself. `saveconfig`
+  leaves out a `resolv.conf` dhcpcd wrote, as it does the one `/etc/rc` writes.
 - NetBSD's unbound is built for a chroot: without `-c` it looks for
   `/var/chroot/unbound/etc/unbound/unbound.conf`. rtadvd chroots to `/var/chroot/rtadvd`,
   which must exist. NPF loads `normalize` from `/lib/npf/ext_normalize.so`.

@@ -84,6 +84,29 @@ For a DSL or fibre modem that expects PPPoE, set `WAN_MODE=pppoe`, `PPPOE_USER` 
 > PPPoE has been tested against a PPPoE server in the lab (session, authentication,
 > address), not yet against a real provider.
 
+If the provider offers IPv6, add:
+
+```
+WAN_IPV6=yes
+```
+
+The router then takes an address for the WAN from the provider's router advertisements
+and DHCPv6, and asks for a prefix by DHCPv6 prefix delegation. The first /64 of that
+prefix goes to the LAN: the clients configure their addresses from it and use the router
+as their IPv6 default router. The firewall applies to IPv6 as to IPv4: of new connections
+from the internet only ICMP comes in. The LAN hosts are reachable by their global
+addresses only through connections they start.
+
+To also have the router as the clients' DNS server over IPv6, give the LAN a unique local
+address as well, e.g. `LAN_ADDR6="fd00:77::1/64"`. Without it, the clients still get
+the IPv4 address of the resolver by DHCP.
+
+> [!NOTE]
+> `WAN_IPV6` works with `WAN_MODE=static` and `dhcp`, not yet with `pppoe`. It has been
+> tested against a simulated provider in the lab (FreeBSD with `rtadvd` and ISC
+> `dhcpd -6`, see [Section 6.8](06-building-and-testing.md#68-the-test-bench-and-automated-tests)),
+> not yet against a real one.
+
 ## 3.5. Keeping Settings
 
 The running system is in RAM: every change is lost at reboot unless saved. `saveconfig`
@@ -113,7 +136,8 @@ version of a file you never edited, the new version is used.
 | `WAN_MODE` | `static`, `dhcp`, `pppoe` | how the WAN gets its address |
 | `WAN_ADDR`, `WAN_GW` | address/prefix, address | `static` only: the address and the default route |
 | `PPPOE_USER`, `PPPOE_PASS`, `PPPOE_AUTH` | text, text, `chap` or `pap` | `pppoe` only |
-| `LAN_ADDR6` | address/prefix | an IPv6 address for the LAN, e.g. `fd00:77::1/64`; clients get addresses from router advertisements |
+| `WAN_IPV6` | `yes`, `no` | IPv6 from the provider: an address for the WAN, and a prefix for the LAN (DHCPv6 prefix delegation); not with `pppoe` yet |
+| `LAN_ADDR6` | address/prefix | an IPv6 address for the LAN, e.g. `fd00:77::1/64`; clients get addresses from router advertisements; with `DNS=yes`, the router announces itself as DNS server at this address |
 | `FIREWALL` | `yes`, `no` | of new connections from the WAN, let only ICMP in (`/etc/npf.conf`) |
 | `NAT` | `yes`, `no` | masquerade the LAN behind the WAN address (`/etc/npf.conf`) |
 | `DHCPD` | `yes`, `no` | DHCP server on the LAN: addresses .100 to .199 of `LAN_ADDR`'s network; fixed addresses and other options in `/etc/dhcpd.conf` |

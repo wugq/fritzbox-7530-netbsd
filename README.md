@@ -3,7 +3,7 @@
 A port of NetBSD 11 to the AVM FRITZ!Box 7530, a home router built around the Qualcomm
 IPQ4019 (four Cortex-A7 cores at 716 MHz, 256 MB RAM, 128 MB NAND, a 5-port gigabit
 switch). The result is a NetBSD that runs from the router's flash and works as a router:
-NAT, DHCP, DNS, IPv6 on the LAN, PPPoE, ssh. WiFi and DSL are not supported.
+NAT, DHCP, DNS, IPv6 (prefix delegation from the provider), PPPoE, ssh. WiFi and DSL are not supported.
 
 It is a learning project: every driver was written for this port, from the hardware's
 register descriptions with Linux and FreeBSD drivers read for reference, and the

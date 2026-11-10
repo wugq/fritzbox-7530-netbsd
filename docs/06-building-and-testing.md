@@ -236,3 +236,59 @@ report goes to `private/test-results/` (not published) and is compared with the 
 one, marking changes over 10%.
 
 What cannot be automated: a real power cycle (a relay on the router's supply would do it).
+
+### Simulating an IPv6 Provider
+
+`WAN_IPV6=yes` was tested with the FreeBSD machine as the provider. It needs a DHCPv6
+server that delegates prefixes (`pkg install isc-dhcp44-server`; FreeBSD's base system
+has none) and `rtadvd` from the base system. The addresses are from the documentation
+prefix `2001:db8::/32`:
+
+```
+# ifconfig em0 inet6 -ifdisabled
+# ifconfig em0 inet6 2001:db8:78::2/64
+# sysctl net.inet6.ip6.forwarding=1
+```
+
+`rtadvd.conf`: the link's prefix, and the M (managed) flag, which tells the router to use
+DHCPv6:
+
+```
+em0:\
+	:raflags#128:rltime#1800:addr="2001:db8:78::":prefixlen#64:
+```
+
+`dhcpd6.conf`: addresses on the link, and /56 prefixes to delegate:
+
+```
+default-lease-time 3600;
+preferred-lifetime 1800;
+subnet6 2001:db8:78::/64 {
+  range6 2001:db8:78::100 2001:db8:78::1ff;
+  prefix6 2001:db8:7700:: 2001:db8:7700:ff00:: /56;
+  option dhcp6.name-servers 2001:db8:78::2;
+}
+```
+
+```
+# rtadvd -c rtadvd.conf em0
+# touch dhcpd6.leases
+# dhcpd -6 -cf dhcpd6.conf -lf dhcpd6.leases em0
+```
+
+ISC dhcpd hands out the prefix but does not route it. A provider's router adds the route
+to the delegated prefix itself; here it is added by hand, with the prefix from the
+server's log and the router's link-local address on the WAN (`ndp -an` on the
+FreeBSD machine):
+
+```
+# route add -inet6 2001:db8:7700:fc00::/56 fe80::xxxx:xxxx:xxxx:xxxx%em0
+```
+
+> [!WARNING]
+> While the router boots, until `/etc/rc` sets `hw.qcomess0.wan_port`, the switch
+> bridges all ports, the WAN port included. During that time the PC on the LAN hears the
+> FreeBSD machine's router advertisements and DHCPv6 server, takes an address and a
+> default route from them, and loses IPv6 connectivity once the router separates the
+> ports. `nmcli con up` on the PC clears it.
+
