@@ -30,8 +30,9 @@
  * Linux' include/uapi/mtd/ubi-media.h for the format; this is a separate
  * implementation).  Enough to find the volumes of an existing UBI device,
  * read them, and rewrite the eraseblocks of a dynamic volume the way UBI
- * does (new copy with a higher sequence number, then erase the old).  No
- * volume creation, no wear-leveling moves, no fastmap.
+ * does (new copy with a higher sequence number, then erase the old), and
+ * remove a volume.  No volume creation, no wear-leveling moves, no
+ * fastmap.
  *
  * OS-independent: flash access goes through the callbacks in struct
  * ubi_lite, the caller provides the per-eraseblock array.
@@ -55,6 +56,9 @@
 #define UBI_CRC32_INIT		0xffffffffU
 #define UBI_HDR_SIZE		64
 #define UBI_VTBL_RECORD_SIZE	172
+#define UBI_MAX_VOLUMES		128	/* records in the volume table */
+#define UBI_LAYOUT_LEBS		2	/* the layout volume: two copies */
+#define UBI_COMPAT_REJECT	5	/* the layout volume's "compat" */
 
 static uint32_t
 be32(const uint8_t *p)
@@ -333,6 +337,9 @@ ubi_pick_free(struct ubi_lite *u)
 	return best;
 }
 
+static int ubi_write_leb(struct ubi_lite *, uint32_t, uint32_t, uint8_t,
+    const uint8_t *, uint32_t);
+
 /*
  * Replace the contents of a LEB of a dynamic volume, as UBI's "atomic LEB
  * change": write the data to a free PEB under a new VID header with a
@@ -344,13 +351,25 @@ int
 ubi_lite_write_leb(struct ubi_lite *u, uint32_t vol_id, uint32_t lnum,
     const uint8_t *data, uint32_t len)
 {
+	if (vol_id >= UBI_LITE_MAXVOL || u->ul_vol[vol_id].v_type != 1 ||
+	    lnum >= u->ul_vol[vol_id].v_reserved_pebs || len > u->ul_leb_size)
+		return EINVAL;
+	return ubi_write_leb(u, vol_id, lnum, 0, data, len);
+}
+
+/*
+ * ubi_lite_write_leb() without the checks, for user volumes (compat 0)
+ * and the layout volume (compat UBI_COMPAT_REJECT: UBI implementations
+ * that do not know an internal volume must refuse the device).
+ */
+static int
+ubi_write_leb(struct ubi_lite *u, uint32_t vol_id, uint32_t lnum,
+    uint8_t compat, const uint8_t *data, uint32_t len)
+{
 	const int old = ubi_lite_find(u, vol_id, lnum);
 	uint8_t *h = u->ul_buf;
 	int p, error;
 
-	if (vol_id >= UBI_LITE_MAXVOL || u->ul_vol[vol_id].v_type != 1 ||
-	    lnum >= u->ul_vol[vol_id].v_reserved_pebs || len > u->ul_leb_size)
-		return EINVAL;
 	for (;;) {
 		if ((p = ubi_pick_free(u)) < 0)
 			return ENOSPC;
@@ -370,6 +389,7 @@ ubi_lite_write_leb(struct ubi_lite *u, uint32_t vol_id, uint32_t lnum,
 	put_be32(v, UBI_VID_MAGIC);
 	v[4] = 1;				/* version */
 	v[5] = 1;				/* dynamic */
+	v[7] = compat;
 	put_be32(v + 8, vol_id);
 	put_be32(v + 12, lnum);
 	put_be64(v + 40, u->ul_max_sqnum + 1);
@@ -421,4 +441,64 @@ ubi_lite_write_leb(struct ubi_lite *u, uint32_t vol_id, uint32_t lnum,
 	if (old >= 0)
 		(void)ubi_erase_peb(u, old);
 	return 0;
+}
+
+/*
+ * Remove a volume, as Linux' ubirmvol does: clear its record in the
+ * volume table, write the table into both copies of the layout volume
+ * (copy 0 first: at attach, UBI trusts copy 0 and repairs copy 1 from
+ * it), then erase the volume's PEBs.  If the power fails before they are
+ * erased, UBI's attach finds PEBs of a volume the table does not have and
+ * erases them itself.
+ *
+ * buf: room for one LEB.  The table is written whole, every record as
+ * read, so records we do not otherwise look at (ids past UBI_LITE_MAXVOL)
+ * are kept.  An unused record is all zeros with a valid CRC: UBI rejects
+ * a table where it is anything else.
+ */
+int
+ubi_lite_remove(struct ubi_lite *u, uint32_t vol_id, uint8_t *buf)
+{
+	const uint32_t slots = MIN(u->ul_leb_size / UBI_VTBL_RECORD_SIZE,
+	    UBI_MAX_VOLUMES);
+	const uint32_t size = roundup(slots * UBI_VTBL_RECORD_SIZE,
+	    u->ul_page_size);
+	uint32_t copy, nerr = 0;
+	int error;
+
+	if (vol_id >= UBI_LITE_MAXVOL || u->ul_vol[vol_id].v_reserved_pebs == 0)
+		return ENOENT;
+	for (copy = 0; copy < UBI_LAYOUT_LEBS; copy++)
+		if (ubi_lite_find(u, UBI_LAYOUT_VOLUME_ID, copy) >= 0)
+			break;
+	if (copy == UBI_LAYOUT_LEBS)
+		return ENOENT;
+	error = ubi_lite_read_leb(u, UBI_LAYOUT_VOLUME_ID, copy, 0, buf, size);
+	if (error != 0)
+		return error;
+
+	uint8_t *rec = buf + vol_id * UBI_VTBL_RECORD_SIZE;
+	if (ubi_crc32(UBI_CRC32_INIT, rec, UBI_VTBL_RECORD_SIZE - 4) !=
+	    be32(rec + UBI_VTBL_RECORD_SIZE - 4) || be32(rec) == 0)
+		return EIO;	/* not the table read at attach */
+	memset(rec, 0, UBI_VTBL_RECORD_SIZE);
+	put_be32(rec + UBI_VTBL_RECORD_SIZE - 4,
+	    ubi_crc32(UBI_CRC32_INIT, rec, UBI_VTBL_RECORD_SIZE - 4));
+
+	for (copy = 0; copy < UBI_LAYOUT_LEBS; copy++) {
+		error = ubi_write_leb(u, UBI_LAYOUT_VOLUME_ID, copy,
+		    UBI_COMPAT_REJECT, buf, size);
+		if (error != 0)
+			return error;
+	}
+	u->ul_vol[vol_id].v_reserved_pebs = 0;
+
+	for (uint32_t p = 0; p < u->ul_npebs; p++) {
+		const struct ubi_peb *pe = &u->ul_peb[p];
+
+		if (pe->pe_state == UBI_PEB_USED && pe->pe_vol_id == vol_id &&
+		    ubi_erase_peb(u, p) != 0)
+			nerr++;
+	}
+	return nerr == 0 ? 0 : EIO;
 }

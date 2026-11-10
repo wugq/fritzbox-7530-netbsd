@@ -44,6 +44,11 @@
  * Minor 255 is the whole chip, read-only: every page with ECC applied, as
  * Linux's /dev/mtdN gives it, for backups.  Pages that fail ECC (a bad
  * block) are returned as read and reported on the console.
+ *
+ * "sysctl -w hw.qcomqpic0.ubi_remove=<name>" removes a volume, as Linux'
+ * ubirmvol does.  The boot loader (U-Boot 2012.07) can create volumes but
+ * not remove them: this is what makes room on a box that still has the
+ * vendor's system in its UBI partition.
  */
 
 #include <sys/cdefs.h>
@@ -56,6 +61,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <sys/fcntl.h>
 #include <sys/kmem.h>
 #include <sys/mutex.h>
+#include <sys/sysctl.h>
 #include <sys/systm.h>
 #include <sys/uio.h>
 
@@ -78,6 +84,7 @@ struct qpic_softc {
 	bool			sc_nand_ok;	/* the chip answered */
 	uint8_t			*sc_leb;	/* one LEB, for read() */
 	uint8_t			*sc_page;	/* one page, for the chip device */
+	struct sysctllog	*sc_sysctllog;
 };
 
 static int	qpic_match(device_t, cfdata_t, void *);
@@ -175,6 +182,52 @@ qpic_ubi_bad(void *arg, uint32_t block)
 {
 	struct qpic_softc * const sc = arg;
 	return qpic_nand_block_bad(&sc->sc_nand, block);
+}
+
+/* --- sysctl --------------------------------------------------------- */
+
+/* hw.qcomqpic0.ubi_remove=<name>: remove the volume of that name */
+static int
+qpic_sysctl_remove(SYSCTLFN_ARGS)
+{
+	struct sysctlnode node = *rnode;
+	struct qpic_softc * const sc = rnode->sysctl_data;
+	struct ubi_lite * const u = &sc->sc_ubi;
+	char vname[64];
+	int vol, error;
+
+	vname[0] = '\0';
+	node.sysctl_data = vname;
+	node.sysctl_size = sizeof(vname);
+	error = sysctl_lookup(SYSCTLFN_CALL(&node));
+	if (error || newp == NULL)
+		return error;
+	mutex_enter(&sc->sc_lock);
+	if ((vol = ubi_lite_lookup(u, vname)) < 0)
+		error = ENOENT;
+	else
+		error = ubi_lite_remove(u, vol, sc->sc_leb);
+	mutex_exit(&sc->sc_lock);
+	if (vol >= 0)
+		device_printf(sc->sc_dev, "UBI volume %d \"%s\": %s (%d)\n",
+		    vol, vname, error == 0 ? "removed" : "remove failed", error);
+	return error;
+}
+
+static void
+qpic_sysctl_attach(struct qpic_softc *sc)
+{
+	const struct sysctlnode *node;
+
+	if (sysctl_createv(&sc->sc_sysctllog, 0, NULL, &node, 0,
+	    CTLTYPE_NODE, device_xname(sc->sc_dev),
+	    SYSCTL_DESCR("NAND controller"), NULL, 0, NULL, 0,
+	    CTL_HW, CTL_CREATE, CTL_EOL) != 0)
+		return;
+	sysctl_createv(&sc->sc_sysctllog, 0, &node, NULL, CTLFLAG_READWRITE,
+	    CTLTYPE_STRING, "ubi_remove",
+	    SYSCTL_DESCR("write a UBI volume's name to remove the volume"),
+	    qpic_sysctl_remove, 0, (void *)sc, 64, CTL_CREATE, CTL_EOL);
 }
 
 /* --- UBI volumes as character devices ------------------------------ */
@@ -426,6 +479,8 @@ qpic_attach(device_t parent, device_t self, void *aux)
 		    u->ul_vol[v].v_reserved_pebs, ubi_lite_mapped(u, v),
 		    u->ul_vol[v].v_type == 1 ? "dynamic" : "static");
 	}
+
+	qpic_sysctl_attach(sc);
 
 devsw:;
 	int bmajor = -1, cmajor = -1;
