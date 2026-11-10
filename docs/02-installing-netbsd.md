@@ -2,15 +2,16 @@
 
 ## 2.1. Synopsis
 
-This chapter installs the NetBSD router system into the flash of a FRITZ!Box 7530, next
-to OpenWrt, and makes it the system the router boots.
+This chapter installs the NetBSD router system into the flash of a FRITZ!Box 7530 and
+makes it the system the router boots.
 
 After reading this chapter, you will know:
 
-- how the 7530 boots and where NetBSD fits in;
+- how U-Boot finds the system to boot;
 - which release image to use;
 - how to try NetBSD from RAM without changing the flash;
-- how to install it into the flash and make it the default.
+- how to make room in the flash and install NetBSD there;
+- how to install it next to OpenWrt instead, if OpenWrt is installed.
 
 Before reading this chapter, you should:
 
@@ -24,14 +25,20 @@ power on → Qualcomm firmware → EVA (AVM) → U-Boot → NetBSD (volume "kern
                                                   ↘ or a file from the PC (TFTP)
 ```
 
-EVA, AVM's boot loader, starts U-Boot, which [Chapter 1](01-installing-uboot.md) installed. U-Boot
-loads the volume named `kernel` from the flash's UBI partition and boots it. With
-OpenWrt installed, that volume is OpenWrt's. Installing NetBSD means writing it into a
-volume of its own and then giving that volume the name `kernel`; U-Boot's own settings
-are never changed.
+EVA, AVM's boot loader, starts U-Boot, which [Chapter 1](01-installing-uboot.md)
+installed. U-Boot looks in the flash's UBI partition for the volume named `kernel` and
+boots it; if there is none, it waits for an image over TFTP. Installing NetBSD means
+putting it into a volume named `kernel`; U-Boot's own settings are never changed.
+
+UBI divides the partition into volumes, like a partition table on a disk
+([Chapter 10](10-nand-and-ubi.md)). On a box that had AVM's system, the volumes are
+AVM's and fill the whole partition: two copies of AVM's system take 90 MB of the
+109 MB. They have to go to make room, and U-Boot cannot remove volumes (it can create
+them); NetBSD can.
 
 U-Boot can also load an image from a PC over TFTP and boot it from RAM. That is how
-NetBSD is tried before it is installed.
+NetBSD is tried, and how it removes AVM's volumes, before anything of it is in the
+flash.
 
 ## 2.3. The Release Images
 
@@ -66,7 +73,8 @@ Keep it running in its own terminal. A firewall on the PC must let TFTP in from
 
 > [!TIP]
 > In a clone of this repository, `sudo tools/tftp-serve.sh` does the same for the
-> directory `tftp/`.
+> directory `tftp/`. Coming straight from [Chapter 1](01-installing-uboot.md),
+> `prepare/flash.sh` is already doing it for `prepare/tftp/`, if it is still running.
 
 ## 2.5. Trying NetBSD from RAM
 
@@ -102,38 +110,59 @@ router to the system in its flash.
 ## 2.6. Installing into the Flash
 
 > [!WARNING]
-> This section writes the flash. OpenWrt keeps its kernel and root file system, but its
-> saved settings are deleted: its writable volume `rootfs_data` (81 MB) is removed to
-> make room. Back them up from OpenWrt first (`sysupgrade -b /tmp/backup.tar.gz`, then
-> copy the file to the PC).
+> This section writes the flash. AVM's system is deleted; its settings volumes
+> (`avm_config`, `avm_userdata`, 15 MB) are kept, unused. The backup of
+> [Section 1.5.3](01-installing-uboot.md#153-backing-up-the-whole-flash) has
+> everything.
 
-1. With the TFTP server running, stop U-Boot as in [Section 2.5](#25-trying-netbsd-from-ram)
-   and create the two volumes NetBSD uses:
+If OpenWrt is installed (U-Boot was installed the other way,
+[Section 1.7](01-installing-uboot.md#17-the-other-way-through-openwrt)), follow
+[Section 2.7](#27-next-to-openwrt) instead.
+
+1. Boot NetBSD from RAM ([Section 2.5](#25-trying-netbsd-from-ram)), log in on the
+   console, and remove AVM's two system volumes:
+
+   ```
+   # sysctl -w hw.qcomqpic0.ubi_remove=avm_filesys_0
+   # sysctl -w hw.qcomqpic0.ubi_remove=avm_filesys_1
+   # dmesg | tail -2
+   qcomqpic0: UBI volume 0 "avm_filesys_0": removed (0)
+   qcomqpic0: UBI volume 1 "avm_filesys_1": removed (0)
+   ```
+
+   Each takes a few seconds: the driver clears the volume's entry in the volume table
+   and erases its 364 eraseblocks
+   ([Section 10.5](10-nand-and-ubi.md#105-removing-a-volume)).
+
+2. Reboot, and stop U-Boot on the console (`Hit any key to stop autoboot`):
+
+   ```
+   # reboot
+   ...
+   (FRITZ7530) #
+   ```
+
+3. Create the two volumes NetBSD uses:
 
    ```
    (FRITZ7530) # ubi part ubi
-   (FRITZ7530) # ubi remove rootfs_data
-   (FRITZ7530) # ubi create netbsd 0x1000000
+   (FRITZ7530) # ubi create kernel 0x1000000
    (FRITZ7530) # ubi create config 0x3e000
    ```
 
-   `netbsd` (16 MB) will hold the image; `config` (248 KB) will hold NetBSD's saved
-   settings ([Chapter 3](03-configuring-the-router.md)).
+   `kernel` (16 MB) will hold the image; `config` (248 KB) will hold NetBSD's saved
+   settings ([Chapter 3](03-configuring-the-router.md)). `ubi part ubi` prints the
+   available eraseblocks: 728 after step 1, the two volumes' 364 each.
 
-2. Load the image and write it:
+4. Load the image, write it, read it back and compare:
 
    ```
    (FRITZ7530) # setenv ipaddr 192.168.77.1; setenv serverip 192.168.77.2
    (FRITZ7530) # tftpboot 0x85000000 netbsd-flash.itb
-   (FRITZ7530) # ubi write 0x85000000 netbsd ${filesize}
-   ```
-
-3. Read it back and compare:
-
-   ```
-   (FRITZ7530) # ubi read 0x89000000 netbsd ${filesize}
+   (FRITZ7530) # ubi write 0x85000000 kernel ${filesize}
+   (FRITZ7530) # ubi read 0x89000000 kernel ${filesize}
    (FRITZ7530) # cmp.b 0x85000000 0x89000000 ${filesize}
-   Total of 15726606 byte(s) were the same
+   Total of 15734498 byte(s) were the same
    ```
 
    The number is the image's size. If the bytes differ, write it again.
@@ -142,29 +171,50 @@ router to the system in its flash.
    > Read back to 0x89000000 as shown, not to a lower address: U-Boot itself sits just
    > below 0x88013000, and reading over it resets the board.
 
-4. Boot the installed copy:
+5. Reset. U-Boot now finds the `kernel` volume and boots it; NetBSD is up in about 45
+   seconds.
 
    ```
-   (FRITZ7530) # ubi read 0x85000000 netbsd ${filesize}
-   (FRITZ7530) # bootm 0x85000000
+   (FRITZ7530) # reset
    ```
 
-## 2.7. Making NetBSD the Default
+Continue with [Chapter 3](03-configuring-the-router.md) to set the router up.
 
-U-Boot boots the volume named `kernel`, which is still OpenWrt's. Renaming the two
-volumes makes NetBSD the default. U-Boot cannot rename volumes; OpenWrt can.
+## 2.7. Next to OpenWrt
 
-1. Power cycle the router. OpenWrt boots (about two minutes).
-2. Log in to OpenWrt: `ssh root@192.168.1.1` from a PC with an address in
-   192.168.1.0/24, or on the serial console.
-3. Swap the names and reboot:
+With OpenWrt installed ([Section 1.7](01-installing-uboot.md#17-the-other-way-through-openwrt)),
+the volume named `kernel` is OpenWrt's. NetBSD goes into a volume of its own, and the
+names are swapped afterwards; OpenWrt stays, as a second system to boot
+([Section 4.3](04-updating-and-recovery.md#43-booting-openwrt)).
+
+> [!WARNING]
+> This writes the flash. OpenWrt keeps its kernel and root file system, but its
+> saved settings are deleted: its writable volume `rootfs_data` (81 MB) is removed to
+> make room. Back them up from OpenWrt first (`sysupgrade -b /tmp/backup.tar.gz`, then
+> copy the file to the PC).
+
+1. Make room by removing `rootfs_data`: from OpenWrt,
+   `ubirmvol /dev/ubi0 --name=rootfs_data`, or from NetBSD in RAM,
+   `sysctl -w hw.qcomqpic0.ubi_remove=rootfs_data` (U-Boot has no command to remove a
+   volume). Then, at the U-Boot prompt, create the two volumes:
+
+   ```
+   (FRITZ7530) # ubi part ubi
+   (FRITZ7530) # ubi create netbsd 0x1000000
+   (FRITZ7530) # ubi create config 0x3e000
+   ```
+
+2. Write the image into `netbsd` and check it, as in step 4 of
+   [Section 2.6](#26-installing-into-the-flash), with `netbsd` in place of `kernel`.
+
+3. Boot OpenWrt (power cycle, about two minutes), log in (`ssh root@192.168.1.1`, or the
+   serial console), swap the names and reboot:
 
    ```
    # ubirename /dev/ubi0 kernel openwrt netbsd kernel
    # reboot
    ```
 
-The router now boots NetBSD by itself, in about 45 seconds. OpenWrt stays installed as
-`openwrt`; [Chapter 4](04-updating-and-recovery.md) shows how to boot it.
+The router now boots NetBSD by itself. OpenWrt stays installed as `openwrt`.
 
 Continue with [Chapter 3](03-configuring-the-router.md) to set the router up.

@@ -21,7 +21,8 @@ After reading this chapter, you will know:
 
 - how the IPQ4019's NAND controller (QPIC) is driven without its DMA engine;
 - how a page is laid out in codewords with ECC;
-- how UBI's on-flash format is read, and how one volume is rewritten safely.
+- how UBI's on-flash format is read, and how one volume is rewritten safely;
+- how a volume is removed, and how that was tested without a Linux machine.
 
 Before reading this chapter, you should:
 
@@ -91,8 +92,9 @@ the highest sequence number, reads the volume table, and reads LEBs. Writing rep
 LEB the way UBI does ("atomic LEB change"): the new contents go to a free PEB under a VID
 header with a higher sequence number, are read back and compared, and only then is the old
 PEB erased and given a new erase counter header. If the power fails in between, both
-copies exist and the next scan picks the newer one. Only dynamic volumes; no volume
-creation, wear-leveling moves or fastmap.
+copies exist and the next scan picks the newer one. Only dynamic volumes; a volume can
+be removed ([Section 10.5](#105-removing-a-volume)); no volume creation, wear-leveling
+moves or fastmap.
 
 The volumes are character devices (minor = volume id):
 
@@ -129,3 +131,81 @@ its contents stay identical to the installed image.
 (`ustar` at byte 257) and unpacks it, otherwise falls back to the USB stick. Tested: settings
 saved (about 120 KB, one LEB), a marker in `/etc/hosts`, the ssh host keys and file owners
 and modes come back after a reboot; ssh logs in with the same host key.
+
+## 10.5. Removing a Volume
+
+### Why
+
+A stock 7530's UBI partition is full: AVM's two system copies (`avm_filesys_0` and
+`avm_filesys_1`, 364 LEBs each), its settings and user data leave no eraseblock
+available. The boot loader, U-Boot 2012.07, can create volumes (`help ubi` lists part,
+info, create, write and read) but cannot remove one. OpenWrt's installation removes
+AVM's volumes from OpenWrt running in RAM, with `ubirmvol`. To install without
+OpenWrt, NetBSD has to do it:
+
+```
+# sysctl -w hw.qcomqpic0.ubi_remove=avm_filesys_0
+```
+
+A sysctl, not a new program: `sysctl(8)` is already in the image, and the driver
+gets a string, looks the name up, and returns an error number, which is all a
+command needs.
+
+### What removing is
+
+A volume exists because of its record in the volume table; its eraseblocks are just
+eraseblocks whose VID header names it. Linux's `ubirmvol` (`ubi_remove_volume()` in
+`drivers/mtd/ubi/vmt.c`) clears the record, writes the table, then erases the
+eraseblocks. `ubi_lite_remove()` does the same, in the same order:
+
+1. Read the volume table from the layout volume, all 128 records (22016 bytes, padded
+   to whole pages: 22528), not only the 32 that `ubi_lite` otherwise looks at, so
+   records it does not know are written back unchanged.
+2. Replace the volume's record with an **empty record**.
+3. Write the table into the layout volume's LEB 0, then LEB 1, each an atomic LEB
+   change ([Section 10.4](#104-ubi)).
+4. Erase every PEB of the volume and give it a new erase counter header.
+
+If the power fails after step 3, the table no longer has the volume but its PEBs still
+carry its id. UBI's attach handles that: PEBs of a volume the table does not have are
+erased (`check_attaching_info()` in `vtbl.c`). If it fails between the two copies of
+step 3, they differ; attach trusts copy 0 and rewrites copy 1 from it, which is why
+copy 0 goes first.
+
+### The details that matter
+
+Three things UBI checks at attach, any of which would make it refuse the whole device,
+not just one volume:
+
+- **An empty record is all zeros with a valid CRC**, not all zeros and not all 0xff.
+  `vtbl_check()` compares every record whose `reserved_pebs` is 0 with this exact
+  pattern. The stock table confirms it: its 124 unused records are just that.
+- **The layout volume's VID headers carry `compat` = 5** (`UBI_COMPAT_REJECT`: "a UBI
+  that does not know this internal volume must not attach the device"). The VID header
+  of a user volume has `compat` 0, and `validate_vid_hdr()` rejects an internal volume
+  with 0. The writing function gained a `compat` argument for this.
+- **Both copies must be identical**, byte for byte over the table's size.
+
+### How it was tested
+
+Without root on the PC there is no `nandsim` and no Linux UBI to try it on, so:
+
+1. **A copy of the stock flash, on the PC.** `ubi_lite.c` is OS-independent: a small
+   harness compiles it on Linux with the flash simulated in a file (the UBI partition
+   from a backup; programming only clears bits, as on NAND; a page of all 0xff reads as
+   erased). It removed `avm_filesys_0` and `avm_filesys_1`: 464 PEBs erased, 855 free.
+2. **An independent check.** A Python script, written from Linux's attach rules rather
+   than from `ubi_lite`, checks every EC and VID header, the `compat` values, both table
+   copies, every record and empty record, that no PEB belongs to a volume the table
+   lacks, that the other volumes' data is unchanged, and that every erase counter that
+   changed went up by exactly one. It passes the untouched stock image (which checks the
+   checker) and the result.
+3. **On the router.** A volume `test` made in U-Boot (`ubi create test 0x3e000`, two LEBs
+   written), removed with the sysctl from NetBSD booted from RAM; full backups before
+   and after compared with the same script; then U-Boot's own UBI code, a port of
+   Linux's, attached the partition with no warning, the volume gone and its two
+   eraseblocks available again (532, as before `test` was created); NetBSD's settings in
+   `config` loaded as usual.
+
+What was not tested: removing AVM's volumes on the router itself, since this box no
+longer has them, and a power failure in the middle.

@@ -48,7 +48,9 @@ image's version. Drop it by copying the image's version back and saving:
 
 ## 4.3. Booting OpenWrt
 
-OpenWrt stays installed in the volume `openwrt`. To boot it once, at the U-Boot prompt:
+If NetBSD was installed next to OpenWrt
+([Section 2.7](02-installing-netbsd.md#27-next-to-openwrt)), OpenWrt stays in the volume
+`openwrt`. To boot it once, at the U-Boot prompt:
 
 ```
 (FRITZ7530) # ubi part ubi
@@ -63,7 +65,7 @@ To make it the default again, from OpenWrt:
 ```
 
 OpenWrt then runs without saved settings, since its `rootfs_data` volume was removed
-([Section 2.6](02-installing-netbsd.md#26-installing-into-the-flash)). To give it one again, from
+([Section 2.7](02-installing-netbsd.md#27-next-to-openwrt)). To give it one again, from
 OpenWrt: `ubimkvol /dev/ubi0 -N rootfs_data -m` (it takes all the free space).
 
 ## 4.4. When the Router Does Not Boot
@@ -78,5 +80,5 @@ serial console shows the last message. Boot a known-good image from RAM
 ([Section 2.5](02-installing-netbsd.md#25-trying-netbsd-from-ram)) and update the flash from there.
 
 **U-Boot does not start, or the flash is damaged.** EVA, AVM's boot loader, is never
-changed by these instructions. It can always start U-Boot and OpenWrt from RAM again, and
-OpenWrt can repair the flash: see [Section 1.7](01-installing-uboot.md#17-recovery).
+changed by these instructions. It can always start U-Boot from RAM again, and from there
+NetBSD or OpenWrt: see [Section 1.9](01-installing-uboot.md#19-recovery).

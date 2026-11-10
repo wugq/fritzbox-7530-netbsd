@@ -67,7 +67,7 @@ as a release for every `v*` tag.
 | `patches/` | changes to stock NetBSD files |
 | `flash/` | the flash edition's root file system: program list, `/etc`, builders |
 | `tools/` | build, boot, test and serial console helpers |
-| `prepare/` | installing U-Boot and OpenWrt (scripts only; firmware is not included) |
+| `prepare/` | starting U-Boot through EVA, backing up the flash, the OpenWrt way (scripts only; firmware is not included) |
 | `docs/` | the Handbook |
 
 ## License

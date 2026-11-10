@@ -21,7 +21,7 @@ Before reading this chapter, you should:
 
 ## 9.2. Booting from the NAND without Changing U-Boot
 
-U-Boot, as OpenWrt installs it, boots like this (`printenv`):
+U-Boot, as OpenWrt builds it, boots like this (`printenv`):
 
 ```
 bootcmd=run fritzboot
@@ -31,8 +31,9 @@ nandboot=ubi part ubi && ubi read 0x85000000 kernel && bootm
 
 It reads the UBI volume named `kernel` and boots it as a FIT image. Our images are FIT
 images too, so a UBI volume named `kernel` holding the NetBSD image is all it takes: **no
-U-Boot variable changes and no `saveenv`**. That is why installing is "write a volume,
-then swap the names" ([Section 2.6](02-installing-netbsd.md#26-installing-into-the-flash)).
+U-Boot variable changes and no `saveenv`**. That is why installing is "create a volume
+named `kernel` and write the image into it"
+([Section 2.6](02-installing-netbsd.md#26-installing-into-the-flash)).
 
 The NAND (128 MB, 128 KB blocks, 2 KB pages):
 
@@ -44,17 +45,20 @@ The NAND (128 MB, 128 KB blocks, 2 KB pages):
 | uboot0/1 | 2 x 4 MB | U-Boot |
 | ubi | 109 MB | UBI volumes |
 
-The UBI volumes with OpenWrt and NetBSD installed:
+The UBI volumes, installed without OpenWrt
+([Section 2.6](02-installing-netbsd.md#26-installing-into-the-flash)):
 
 | volume | size | |
 |---|---|---|
-| `kernel` | 16 MB | the NetBSD image (after the swap; OpenWrt's before) |
-| `openwrt` | 3.6 MB | OpenWrt's kernel (named `kernel` before the swap) |
-| `rootfs` | 5.5 MB | OpenWrt's root file system (squashfs) |
+| `kernel` | 16 MB | the NetBSD image |
 | `config` | 248 KB | NetBSD's saved settings |
-| `avm_config`, `avm_userdata` | | vendor data, left alone |
+| `avm_config`, `avm_userdata` | 15 MB | vendor data, left alone |
 
-OpenWrt's writable overlay `rootfs_data` (81 MB) is removed to make room.
+AVM's two system copies, `avm_filesys_0` and `avm_filesys_1` (44 MB each), were removed
+to make room. Installed next to OpenWrt
+([Section 2.7](02-installing-netbsd.md#27-next-to-openwrt)), there are also `openwrt`
+(3.6 MB, OpenWrt's kernel, named `kernel` before the swap) and `rootfs` (5.5 MB, its
+squashfs root); OpenWrt's writable overlay `rootfs_data` (81 MB) was removed instead.
 
 ## 9.3. The Image: One Gzipped Kernel with the Root File System Inside
 
@@ -193,7 +197,7 @@ makes `/dev/ubivolN`.
   volume must stay below about 39 MB. That is why the image is gzipped and the volume is
   16 MB, and why the read-back check goes to 0x89000000.
 - The image is 15.7 MB; the 16 MB volume holds 133 LEBs (16.9 MB).
-- After `ubi remove rootfs_data`, OpenWrt runs without saved settings until its overlay
+- After removing `rootfs_data`, OpenWrt runs without saved settings until its overlay
   is recreated (`ubimkvol /dev/ubi0 -N rootfs_data -m`, which takes the rest of the
   space).
 - NetBSD's unbound is built for a chroot: without `-c` it looks for

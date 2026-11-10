@@ -9,9 +9,11 @@ on the router (NetBSD or OpenWrt), `(FRITZ7530) #` at the U-Boot prompt.
 ## Part I. Using
 
 1. [Installing U-Boot](01-installing-uboot.md)
-   - how the box boots; the serial console; backing up the flash; U-Boot and OpenWrt; recovery
+   - how the box boots; the serial console; U-Boot and NetBSD from RAM; backing up the
+     flash; writing U-Boot; the other way, through OpenWrt; recovery
 2. [Installing NetBSD](02-installing-netbsd.md)
-   - the release images; the TFTP server; trying NetBSD from RAM; installing into the flash
+   - the release images; the TFTP server; trying NetBSD from RAM; removing AVM's system
+     and installing into the flash; next to OpenWrt
 3. [Configuring the Router](03-configuring-the-router.md)
    - ssh; a home router behind a modem; keeping settings; `router.conf`; LEDs, buttons, logs
 4. [Updating and Recovery](04-updating-and-recovery.md)
