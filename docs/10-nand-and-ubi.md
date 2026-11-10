@@ -191,10 +191,11 @@ not just one volume:
 Without root on the PC there is no `nandsim` and no Linux UBI to try it on, so:
 
 1. **A copy of the stock flash, on the PC.** `ubi_lite.c` is OS-independent: a small
-   harness compiles it on Linux with the flash simulated in a file (the UBI partition
+   harness (`tools/ubi/ubi-harness.c`) compiles it on Linux with the flash simulated in a file (the UBI partition
    from a backup; programming only clears bits, as on NAND; a page of all 0xff reads as
    erased). It removed `avm_filesys_0` and `avm_filesys_1`: 464 PEBs erased, 855 free.
-2. **An independent check.** A Python script, written from Linux's attach rules rather
+2. **An independent check.** A Python script (`tools/ubi/ubi-check.py`), written from
+   Linux's attach rules rather
    than from `ubi_lite`, checks every EC and VID header, the `compat` values, both table
    copies, every record and empty record, that no PEB belongs to a volume the table
    lacks, that the other volumes' data is unchanged, and that every erase counter that
