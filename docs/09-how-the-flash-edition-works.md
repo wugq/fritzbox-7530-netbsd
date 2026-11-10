@@ -69,7 +69,9 @@ kernel**, the way NetBSD's installation kernels do it. (A NAND driver came later
 
 - `FRITZ7530_FLASH` is the board kernel `FRITZ7530` ([Chapter 8](08-board-kernel-configuration.md))
   with `MEMORY_DISK_IS_ROOT` and `MEMORY_DISK_ROOT_SIZE=81920`: a 40 MB array
-  `md_root_image` in the kernel.
+  `md_root_image` in the kernel. It also has `QCOM_ESS_ISOLATE`: the switch ports start
+  apart, so that the WAN jack is not on the LAN while the router boots
+  ([Chapter 7](07-how-the-drivers-work.md#vlans-and-a-wan-port)).
 - `tools/mkflash.sh` fills the array with the root image (`mdsetimage -s`), turns the
   kernel into a raw binary, gzips it, and makes a FIT whose kernel is marked
   `compression = "gzip"`; U-Boot unpacks it at `bootm`.
@@ -119,7 +121,9 @@ read in one page:
 2. restore the saved settings (below) and read `/etc/router.conf`;
 3. network: the LAN on `qcomedma0`; the WAN port as `vlan2` (the switch tags it, see
    [Chapter 7](07-how-the-drivers-work.md#vlans-and-a-wan-port)) with a static address, `dhcpcd` or
-   `pppoe0`; IPv6 from the WAN with `dhcpcd` and on the LAN with `rtadvd`;
+   `pppoe0`; then the switch ports, apart since the kernel attached the switch, may talk
+   to each other (`hw.qcomess0.isolate=0`); IPv6 from the WAN with `dhcpcd` and on the LAN
+   with `rtadvd`;
 4. services by option: `npf` (firewall and NAT), `dhcpd`, `unbound`, `ntpd`; always `syslogd`,
    `sshd` (host keys made if missing), `powerd` (buttons);
 5. info LED green.

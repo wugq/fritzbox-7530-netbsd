@@ -459,7 +459,18 @@ ifconfig vlan2 192.0.2.1/24 up          # or: dhcpcd vlan2
     with a VLAN the port is not in.
 
 This is how FreeBSD's `ar40xx` and OpenWrt's old swconfig did it: one link between switch
-and CPU, the tag tells LAN from WAN. Seen from the front, the jack farthest from the DSL
+and CPU, the tag tells LAN from WAN.
+
+Until something sets `wan_port`, every jack is in one segment, the future WAN jack
+included. On a router behind a provider's modem, that would put the modem's network on
+the LAN while the router boots: the LAN hosts would hear its DHCP server and router
+advertisements, and talk to it past the firewall. Testing IPv6 on the bench showed
+exactly this. So the flash edition's kernel has `options QCOM_ESS_ISOLATE`, which makes
+the driver start with `isolate=1`: each jack talks only to the CPU. A single-user boot
+shows the difference: with the option the PC on port 4 no longer reaches the machine on
+port 3, without it it does. `/etc/rc` sets the WAN port first and then `isolate=0`. The
+seconds before the kernel takes over the switch are U-Boot's: it bridges all ports too,
+and that part is not ours to change. Seen from the front, the jack farthest from the DSL
 jack is switch port 4, the next one port 3.
 
 Routing LAN <-> WAN: about 500 Mbit/s with one flow, 600-850 with four or eight, a little
@@ -491,7 +502,7 @@ stack (`tprof` can show where).
 |---|---|
 | `hw.qcomess0.ports` | link state of ports 1-5 |
 | `hw.qcomess0.wan_port=N` | port N becomes the WAN (VLAN 2), 0 = none |
-| `hw.qcomess0.isolate=1` | ports 1-5 talk only to the CPU (routing tests) |
+| `hw.qcomess0.isolate=1` | ports 1-5 talk only to the CPU (routing tests); 1 from attach with `options QCOM_ESS_ISOLATE` |
 | `hw.qcomess0.dump=1` | the main switch registers on the console |
 
 Not done: one network interface per port (like Linux's DSA).

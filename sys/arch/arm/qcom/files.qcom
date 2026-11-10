@@ -62,6 +62,9 @@ file	arch/arm/qcom/qpic_nand.c		qcom_qpic
 file	dev/ubi/ubi_lite.c			qcom_qpic
 
 # ESS switch: ESS reset, switch set-up, port link polling
+# QCOM_ESS_ISOLATE: the ports talk only to the CPU until userland says
+# otherwise (hw.qcomess0.isolate=0)
+defflag	opt_qcom_ess.h			QCOM_ESS_ISOLATE
 device	qcomess
 attach	qcomess at fdt with qcom_ess
 file	arch/arm/qcom/ipq4019_ess.c		qcom_ess

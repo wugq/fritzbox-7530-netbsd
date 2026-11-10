@@ -109,6 +109,10 @@ if [ "${WAN_PORT:-0}" != 0 ]; then
 		route -q add default -iface 0.0.0.1 ;;
 	esac
 fi
+# The kernel starts with the switch ports apart (QCOM_ESS_ISOLATE), so
+# that the WAN and the LAN are not one network while the router boots.
+# Now that the WAN port is separate, the LAN ports may talk directly.
+sysctl -qw hw.qcomess0.isolate=0
 sysctl -qw net.inet.ip.forwarding=1
 
 # IPv6 on the LAN: router advertisements (rtadvd) of the prefixes on

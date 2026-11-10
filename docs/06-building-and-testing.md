@@ -286,9 +286,12 @@ FreeBSD machine):
 ```
 
 > [!WARNING]
-> While the router boots, until `/etc/rc` sets `hw.qcomess0.wan_port`, the switch
-> bridges all ports, the WAN port included. During that time the PC on the LAN hears the
-> FreeBSD machine's router advertisements and DHCPv6 server, takes an address and a
-> default route from them, and loses IPv6 connectivity once the router separates the
-> ports. `nmcli con up` on the PC clears it.
+> While U-Boot runs, its switch set-up bridges all ports, the WAN port included (the
+> kernel keeps them apart from when it takes over the switch, see
+> [Section 7.9](07-how-the-drivers-work.md#vlans-and-a-wan-port)). On the bench U-Boot
+> waits at its prompt while the image comes over TFTP, and `tools/nb-cycle.sh`
+> re-activates the PC's link between TFTP attempts: the PC then sends a router
+> solicitation and a DHCPv6 request, gets answers from the FreeBSD machine, and keeps an
+> address and a default route that stop working once the router is up. `nmcli con up`
+> on the PC clears it.
 

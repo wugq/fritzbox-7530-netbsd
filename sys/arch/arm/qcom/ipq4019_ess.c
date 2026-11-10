@@ -40,7 +40,8 @@
  *     lookup.  The EDMA driver attaches later and finds a clean engine;
  *   - polling the port link states (log messages, hw.qcomess0.ports);
  *   - hw.qcomess0.wan_port: make one port the WAN (802.1Q VLAN 2);
- *   - hw.qcomess0.isolate: ports 1-5 talk only to the CPU (routing tests).
+ *   - hw.qcomess0.isolate: ports 1-5 talk only to the CPU (routing tests;
+ *     from attach on with options QCOM_ESS_ISOLATE, see ess_attach);
  *   - the ports' MIB counters as evcnts ("vmstat -e | grep qcomess");
  * Not done (yet): the PSGMII self-test, per-port network
  * interfaces, a device-tree or ioctl interface for VLANs.
@@ -48,6 +49,8 @@
 
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD$");
+
+#include "opt_qcom_ess.h"
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -775,6 +778,17 @@ ess_attach(device_t parent, device_t self, void *aux)
 	    ESS_SAVE_SIZE / 4);
 	ess_reset(sc, rst);
 	fdtbus_reset_put(rst);
+#ifdef QCOM_ESS_ISOLATE
+	/*
+	 * Start with the ports apart: until userland has made one of them
+	 * the WAN (hw.qcomess0.wan_port), they would all be one network,
+	 * and a provider's modem on the WAN port would be on the LAN while
+	 * the router boots (its DHCP and router advertisements reaching
+	 * the LAN hosts, past the firewall).  The flash edition's /etc/rc
+	 * sets the WAN port first, then isolate=0.
+	 */
+	sc->sc_isolate = 1;
+#endif
 	ess_init(sc);
 	ess_compare_uboot(sc, save);
 	kmem_free(save, ESS_SAVE_SIZE);

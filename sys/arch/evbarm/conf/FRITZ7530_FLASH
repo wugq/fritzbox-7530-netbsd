@@ -14,3 +14,7 @@ include	"arch/evbarm/conf/FRITZ7530"
 no options 	MEMORY_DISK_DYNAMIC	# std.generic: md image from the boot loader
 options 	MEMORY_DISK_IS_ROOT	# the root is the memory disk, always
 options 	MEMORY_DISK_ROOT_SIZE=81920	# 40 MB in 512-byte blocks
+
+# switch ports apart until /etc/rc has set the WAN port: the WAN and the
+# LAN are never one network while the router boots
+options 	QCOM_ESS_ISOLATE
