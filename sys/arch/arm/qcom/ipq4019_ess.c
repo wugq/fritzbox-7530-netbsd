@@ -42,11 +42,12 @@
  *     lookup.  The EDMA driver attaches later and finds a clean engine;
  *   - polling the port link states (log messages, hw.qcomess0.ports);
  *   - hw.qcomess0.wan_port: make one port the WAN (802.1Q VLAN 2);
+ *   - hw.qcomess0.vlans: any 802.1Q VLAN table (ports untagged or tagged);
  *   - hw.qcomess0.isolate: ports 1-5 talk only to the CPU (routing tests;
  *     from attach on with options QCOM_ESS_ISOLATE, see ess_attach);
  *   - the ports' MIB counters as evcnts ("vmstat -e | grep qcomess");
  * Not done (yet): per-port network interfaces, a device-tree or ioctl
- * interface for VLANs.
+ * interface for VLANs (FreeBSD's etherswitch(4)).
  */
 
 #include <sys/cdefs.h>
@@ -74,6 +75,8 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #define ESS_NPORTS		6	/* 0 = CPU, 1-5 = PHYs 0-4 */
 #define ESS_PORTS_ALL		0x3f
 #define ESS_SAVE_SIZE		0x1000	/* U-Boot comparison window */
+#define ESS_MAXVLANS		16
+#define ESS_VLANSTR		400	/* hw.qcomess0.vlans */
 
 /* switch registers (ar40xx_reg.h) */
 #define SW_MODULE_EN		0x030
@@ -242,7 +245,12 @@ struct ess_softc {
 	callout_t		sc_tick;
 	uint32_t		sc_link;	/* bitmap of ports with link */
 	int			sc_isolate;
-	int			sc_wan;		/* WAN port (802.1Q mode), or 0 */
+	u_int			sc_nvlans;	/* 0: port-based mode */
+	struct ess_vlan {
+		uint16_t	vid;
+		uint8_t		ports;		/* members, bits 1-5 */
+		uint8_t		tagged;		/* of those, tagged */
+	}			sc_vlans[ESS_MAXVLANS];
 	struct sysctllog	*sc_sysctllog;
 	char			sc_mibgrp[ESS_NPORTS][20];
 	struct evcnt		sc_mib_ev[ESS_NPORTS][ESS_NMIBS];
@@ -573,14 +581,19 @@ ess_vtu_load(struct ess_softc *sc, u_int vid, uint32_t ports, uint32_t untag)
 /*
  * Which ports belong together.  Two modes, as FreeBSD's ar40xx:
  *
- * wan_port = 0: port-based VLANs only (what U-Boot does).  Ports 0-5 form
- *   one bridge, tags are left alone.
- * wan_port = N: 802.1Q.  VLAN 1 = CPU and the other ports, all untagged,
- *   so qcomedma0 stays the LAN interface; VLAN 2 = port N untagged and the
- *   CPU tagged, i.e. the WAN is vlan(4) id 2 on qcomedma0.  Ingress
- *   "secure": a port drops frames of VLANs it isn't in.
+ * port-based (no VLAN table, sc_nvlans = 0; what U-Boot does): ports 0-5
+ *   form one bridge, tags are left alone.
+ * 802.1Q (sc_nvlans > 0): the VLAN table says which ports are members of
+ *   which VLAN, tagged or untagged.  The CPU port is a member of every
+ *   VLAN: untagged in VLAN 1, so qcomedma0 is VLAN 1, and tagged in the
+ *   others, which are vlan(4) interfaces on qcomedma0.  A port's PVID (the
+ *   VLAN of the untagged frames it receives) is the VLAN it is an untagged
+ *   member of.  Ingress "secure": a port drops frames of VLANs it isn't
+ *   in, and untagged frames if it is in no VLAN untagged.
  *
- * isolate (both modes): ports 1-5 may send only to the CPU port.
+ * hw.qcomess0.wan_port = N is a shorthand for the table "VLAN 1 = the
+ * other ports, VLAN 2 = port N", both untagged; the WAN is then vlan2.
+ * isolate (both modes): ports 1-5 may send only to the CPU.
  * sc_lock held (or attach).
  */
 #define ESS_LAN_VID	1
@@ -588,28 +601,37 @@ ess_vtu_load(struct ess_softc *sc, u_int vid, uint32_t ports, uint32_t untag)
 static void
 ess_apply_vlans(struct ess_softc *sc)
 {
-	const int wan = sc->sc_wan;
-	const uint32_t wanbit = wan ? __BIT(wan) : 0;
-	const uint32_t lanports = ESS_PORTS_ALL & ~wanbit;
+	const u_int n = sc->sc_nvlans;
 
 	ess_vtu_op(sc, VTU_OP_FLUSH, 0);
-	if (wan) {
-		ess_vtu_load(sc, ESS_LAN_VID, lanports, lanports);
-		ess_vtu_load(sc, ESS_WAN_VID, __BIT(0) | wanbit, wanbit);
+	for (u_int i = 0; i < n; i++) {
+		const struct ess_vlan *v = &sc->sc_vlans[i];
+
+		ess_vtu_load(sc, v->vid, v->ports | __BIT(0),
+		    (v->ports & ~v->tagged) |
+		    (v->vid == ESS_LAN_VID ? __BIT(0) : 0));
 	}
 	for (u_int p = 0; p < ESS_NPORTS; p++) {
 		uint32_t members, vlan0, vlan1, inmode;
+		u_int pvid = p == 0 ? ESS_LAN_VID : 0;
 
-		if (wan == 0) {
+		if (n == 0) {
 			members = ESS_PORTS_ALL;
 			vlan0 = 0;
 			vlan1 = __SHIFTIN(OUT_MODE_UNTOUCH, VLAN1_OUT_MODE);
 			inmode = IN_PORT_ONLY;
 		} else {
-			const u_int pvid = (p == (u_int)wan) ? ESS_WAN_VID :
-			    ESS_LAN_VID;
-			members = p == 0 ? ESS_PORTS_ALL :
-			    p == (u_int)wan ? __BIT(0) | wanbit : lanports;
+			/* where it may send: the ports it shares a VLAN with */
+			members = p == 0 ? ESS_PORTS_ALL : __BIT(0);
+			for (u_int i = 0; i < n; i++) {
+				const struct ess_vlan *v = &sc->sc_vlans[i];
+
+				if (p == 0 || (v->ports & __BIT(p)) == 0)
+					continue;
+				members |= v->ports;
+				if ((v->tagged & __BIT(p)) == 0)
+					pvid = v->vid;
+			}
 			vlan0 = __SHIFTIN(pvid, VLAN0_DEF_SVID) |
 			    __SHIFTIN(pvid, VLAN0_DEF_CVID);
 			vlan1 = VLAN1_PORT_VLAN_PROP |
@@ -626,6 +648,114 @@ ess_apply_vlans(struct ess_softc *sc)
 		    __SHIFTIN(STATE_FORWARD, LOOKUP_STATE));
 	}
 	ess_atu_flush(sc, -1);
+}
+
+/* wan_port: the port alone and untagged in VLAN 2, or 0 */
+static int
+ess_wan_port(const struct ess_softc *sc)
+{
+	for (u_int i = 0; i < sc->sc_nvlans; i++) {
+		const struct ess_vlan *v = &sc->sc_vlans[i];
+
+		if (v->vid == ESS_WAN_VID && v->tagged == 0 &&
+		    v->ports != 0 && (v->ports & (v->ports - 1)) == 0)
+			return ffs(v->ports) - 1;
+	}
+	return 0;
+}
+
+/* The table wan_port = wan stands for. */
+static void
+ess_set_wan(struct ess_softc *sc, int wan)
+{
+	sc->sc_nvlans = 0;
+	if (wan == 0)
+		return;
+	sc->sc_vlans[0] = (struct ess_vlan){ ESS_LAN_VID,
+	    ESS_PORTS_ALL & ~__BIT(0) & ~__BIT(wan), 0 };
+	sc->sc_vlans[1] = (struct ess_vlan){ ESS_WAN_VID, __BIT(wan), 0 };
+	sc->sc_nvlans = 2;
+}
+
+/*
+ * The VLAN table as text, hw.qcomess0.vlans: "VID:PORTS ...", the ports
+ * a comma-separated list, "t" after a port that is a tagged member, e.g.
+ * "1:1,2,4 2:3 7:3t" (the CPU port is left out: it is in every VLAN).
+ * Empty: port-based mode.
+ */
+static void
+ess_vlans_fmt(const struct ess_vlan *vl, u_int n, char *buf, size_t len)
+{
+	size_t o = 0;
+
+	buf[0] = '\0';
+	for (u_int i = 0; i < n && o < len; i++) {
+		o += snprintf(buf + o, len - o, "%s%u:", i ? " " : "",
+		    vl[i].vid);
+		const char *sep = "";
+		for (u_int p = 1; p < ESS_NPORTS && o < len; p++) {
+			if ((vl[i].ports & __BIT(p)) == 0)
+				continue;
+			o += snprintf(buf + o, len - o, "%s%u%s", sep, p,
+			    (vl[i].tagged & __BIT(p)) ? "t" : "");
+			sep = ",";
+		}
+	}
+}
+
+static int
+ess_vlans_parse(const char *s, struct ess_vlan *vl, u_int *np)
+{
+	uint32_t untagged = 0;	/* ports already untagged in a VLAN */
+	u_int n = 0;
+
+	for (;;) {
+		struct ess_vlan v = { 0, 0, 0 };
+
+		while (*s == ' ' || *s == '\t' || *s == '\n')
+			s++;
+		if (*s == '\0')
+			break;
+		if (n == ESS_MAXVLANS)
+			return E2BIG;
+		if (*s < '0' || *s > '9')
+			return EINVAL;
+		while (*s >= '0' && *s <= '9') {
+			v.vid = v.vid * 10 + (*s++ - '0');
+			if (v.vid > 4094)
+				return EINVAL;
+		}
+		if (v.vid == 0 || *s++ != ':')
+			return EINVAL;
+		for (;;) {	/* the ports, at least one */
+			const u_int p = *s - '0';
+
+			if (*s < '1' || p >= ESS_NPORTS ||
+			    (v.ports & __BIT(p)))
+				return EINVAL;
+			s++;
+			v.ports |= __BIT(p);
+			if (*s == 't') {
+				v.tagged |= __BIT(p);
+				s++;
+			} else {
+				if (untagged & __BIT(p))
+					return EINVAL;	/* two PVIDs */
+				untagged |= __BIT(p);
+			}
+			if (*s != ',')
+				break;
+			s++;
+		}
+		if (*s != '\0' && *s != ' ' && *s != '\t' && *s != '\n')
+			return EINVAL;
+		for (u_int i = 0; i < n; i++)
+			if (vl[i].vid == v.vid)
+				return EINVAL;
+		vl[n++] = v;
+	}
+	*np = n;
+	return 0;
 }
 
 /* After the reset and the self-test: as FreeBSD's ar40xx_attach() */
@@ -831,8 +961,11 @@ ess_sysctl_wan(SYSCTLFN_ARGS)
 {
 	struct sysctlnode node = *rnode;
 	struct ess_softc * const sc = rnode->sysctl_data;
-	int val = sc->sc_wan, error;
+	int val, error;
 
+	mutex_enter(&sc->sc_lock);
+	val = ess_wan_port(sc);
+	mutex_exit(&sc->sc_lock);
 	node.sysctl_data = &val;
 	error = sysctl_lookup(SYSCTLFN_CALL(&node));
 	if (error || newp == NULL)
@@ -840,7 +973,36 @@ ess_sysctl_wan(SYSCTLFN_ARGS)
 	if (val < 0 || val >= ESS_NPORTS)
 		return EINVAL;
 	mutex_enter(&sc->sc_lock);
-	sc->sc_wan = val;
+	ess_set_wan(sc, val);
+	ess_apply_vlans(sc);
+	mutex_exit(&sc->sc_lock);
+	return 0;
+}
+
+static int
+ess_sysctl_vlans(SYSCTLFN_ARGS)
+{
+	struct sysctlnode node = *rnode;
+	struct ess_softc * const sc = rnode->sysctl_data;
+	struct ess_vlan vl[ESS_MAXVLANS];
+	char buf[ESS_VLANSTR];
+	u_int n;
+	int error;
+
+	mutex_enter(&sc->sc_lock);
+	ess_vlans_fmt(sc->sc_vlans, sc->sc_nvlans, buf, sizeof(buf));
+	mutex_exit(&sc->sc_lock);
+	node.sysctl_data = buf;
+	node.sysctl_size = sizeof(buf);
+	error = sysctl_lookup(SYSCTLFN_CALL(&node));
+	if (error || newp == NULL)
+		return error;
+	buf[sizeof(buf) - 1] = '\0';
+	if ((error = ess_vlans_parse(buf, vl, &n)) != 0)
+		return error;
+	mutex_enter(&sc->sc_lock);
+	memcpy(sc->sc_vlans, vl, sizeof(vl[0]) * n);
+	sc->sc_nvlans = n;
 	ess_apply_vlans(sc);
 	mutex_exit(&sc->sc_lock);
 	return 0;
@@ -889,6 +1051,10 @@ ess_sysctl_attach(struct ess_softc *sc)
 	    "wan_port", SYSCTL_DESCR("0: all ports LAN; N: port N is the WAN, "
 	    "VLAN 2 (tagged towards the CPU: vlan(4) id 2 on qcomedma0)"),
 	    ess_sysctl_wan, 0, (void *)sc, 0, CTL_CREATE, CTL_EOL);
+	sysctl_createv(log, 0, &node, NULL, CTLFLAG_READWRITE, CTLTYPE_STRING,
+	    "vlans", SYSCTL_DESCR("VLAN table: \"VID:PORTS ...\", PORTS like "
+	    "1,2,3t (t: tagged); the CPU is in all, untagged only in VLAN 1"),
+	    ess_sysctl_vlans, 0, (void *)sc, ESS_VLANSTR, CTL_CREATE, CTL_EOL);
 	sysctl_createv(log, 0, &node, NULL, CTLFLAG_READWRITE, CTLTYPE_INT,
 	    "dump", SYSCTL_DESCR("write 1 to print the switch state"),
 	    ess_sysctl_dump, 0, (void *)sc, 0, CTL_CREATE, CTL_EOL);

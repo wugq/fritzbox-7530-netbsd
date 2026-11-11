@@ -499,6 +499,29 @@ ifconfig vlan2 192.0.2.1/24 up          # or: dhcpcd vlan2
 This is how FreeBSD's `ar40xx` and OpenWrt's old swconfig did it: one link between switch
 and CPU, the tag tells LAN from WAN.
 
+`wan_port=N` is a shorthand for one VLAN table. Any other is set with
+`hw.qcomess0.vlans`, a list of `VID:PORTS`, the ports separated by commas, `t` after a
+port that is a tagged member:
+
+```
+# sysctl hw.qcomess0.vlans
+hw.qcomess0.vlans = 1:1,2,4,5 2:3                  # what wan_port=3 makes
+# sysctl -w hw.qcomess0.vlans="1:1,2,5 2:3 10:4"  # port 4 alone in VLAN 10
+# sysctl -w hw.qcomess0.vlans="1:1,2,4,5 2:3 7:3t" # port 3 carries VLAN 7 tagged too
+```
+
+The CPU port is in every VLAN: untagged in VLAN 1 (`qcomedma0`), tagged in the others,
+which NetBSD sees as `vlan(4)` interfaces on `qcomedma0` (`vlan10`, `vlan7`). A port's
+PVID is the VLAN it is an untagged member of; a port may be untagged in one VLAN only,
+and the driver refuses a table that breaks this (`EINVAL`). An empty table is the
+port-based mode. `wan_port` reads back the port that is alone and untagged in VLAN 2,
+so `/etc/rc` keeps working with either.
+
+On the bench: with port 4 moved to VLAN 10 the PC there reached `vlan10`'s address and no
+longer the LAN's, and back with `wan_port=3`; with `7:3t` the machine on port 3 reached
+the router over VLAN 7 (FreeBSD's `em0.7`) and, untagged, over VLAN 2 at the same time;
+without the entry, VLAN 7 got nothing through.
+
 Until something sets `wan_port`, every jack is in one segment, the future WAN jack
 included. On a router behind a provider's modem, that would put the modem's network on
 the LAN while the router boots: the LAN hosts would hear its DHCP server and router
@@ -540,6 +563,7 @@ stack (`tprof` can show where).
 |---|---|
 | `hw.qcomess0.ports` | link state of ports 1-5 |
 | `hw.qcomess0.wan_port=N` | port N becomes the WAN (VLAN 2), 0 = none |
+| `hw.qcomess0.vlans="1:1,2 2:3 10:4t"` | the VLAN table: `VID:PORTS`, `t` = tagged; the CPU is in all, untagged only in VLAN 1 |
 | `hw.qcomess0.isolate=1` | ports 1-5 talk only to the CPU (routing tests); 1 from attach with `options QCOM_ESS_ISOLATE` |
 | `hw.qcomess0.dump=1` | the main switch registers on the console |
 
