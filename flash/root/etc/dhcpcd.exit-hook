@@ -1,15 +1,89 @@
 # /etc/dhcpcd.exit-hook -- read by dhcpcd-run-hooks after each dhcpcd(8)
-# event (the variables are in dhcpcd-run-hooks(8)).
+# event (the variables are in dhcpcd-run-hooks(8)), and by /etc/rc before
+# it starts rtadvd.  It is sourced, not run: no "exit", and its own
+# variables start with "_".
 #
 # When the prefix the provider delegates (WAN_IPV6=yes in router.conf)
-# appears, changes or goes away, dhcpcd changes the address of the LAN,
-# qcomedma0, and rtadvd(8) has to announce the new prefix.  rtadvd should
-# notice that by itself, from the routing socket, but on this system it
-# does not: SIGHUP makes it read the addresses of the interface again.
+# appears, changes or goes away, dhcpcd changes the addresses of the LAN,
+# qcomedma0, and rtadvd(8) has to announce the change.  It does not notice
+# by itself (see the Pitfalls of chapter 9), so this hook writes rtadvd's
+# configuration with the LAN's prefixes listed, and makes rtadvd read it
+# again (SIGHUP).  A prefix that went away stays in the list for a while,
+# announced with lifetimes 0: the hosts on the LAN stop using their
+# addresses in it at once, instead of after the 7 days rtadvd announces.
+#
+#   /var/run/rtadvd.ra		rtadvd.conf capabilities from /etc/rc
+#				(rltime, rdnss), each ending in ":"
+#   /var/run/rtadvd.prefixes	the LAN's prefixes, last time
+#   /var/run/rtadvd.gone	prefixes that went away (the last 8)
 
-lan_prefixes=$(ifconfig qcomedma0 inet6 2>/dev/null |
-    awk '$1 == "inet6" && $2 !~ /^fe80:/ { print $2 }')
-if [ "$lan_prefixes" != "$(cat /var/run/rtadvd.prefixes 2>/dev/null)" ]; then
-	echo "$lan_prefixes" > /var/run/rtadvd.prefixes
-	pkill -HUP -x rtadvd || :	# none yet: /etc/rc starts it later
+# The networks of qcomedma0's global addresses, as "network/length".
+_rtadvd_prefixes() {
+	ifconfig qcomedma0 inet6 2>/dev/null | awk '
+	function hex(s,  i, n) {
+		n = 0
+		for (i = 1; i <= length(s); i++)
+			n = n * 16 + index("0123456789abcdef",
+			    substr(tolower(s), i, 1)) - 1
+		return n
+	}
+	$1 == "inet6" && $2 !~ /^fe80:/ {
+		split($2, al, "/"); len = al[2] == "" ? 64 : al[2]
+		# expand "::" to eight groups
+		n = split(al[1], h, "::")
+		nl = h[1] == "" ? 0 : split(h[1], l, ":")
+		nr = (n < 2 || h[2] == "") ? 0 : split(h[2], r, ":")
+		for (i = 1; i <= 8; i++)
+			g[i] = i <= nl ? l[i] : i > 8 - nr ? r[i - 8 + nr] : "0"
+		# clear the bits after the prefix length
+		out = ""
+		for (i = 1; i <= 8; i++) {
+			v = hex(g[i]); b = len - 16 * (i - 1)
+			if (b <= 0)
+				v = 0
+			else if (b < 16)
+				v -= v % 2 ^ (16 - b)
+			out = out sprintf("%s%x", i > 1 ? ":" : "", v)
+		}
+		print out "/" len
+	}' | sort -u
+}
+
+# rtadvd.conf: rc's capabilities, the prefixes now, and the ones gone
+# with lifetimes 0 (the hosts treat a valid lifetime below 2 hours as 2
+# hours, RFC 4862 5.5.3, so their addresses there end within 2 hours).
+_rtadvd_conf() {
+	{
+		echo "$_now" | awk 'NF { print $0, "now" }'
+		awk 'NF { print $0, "gone" }' /var/run/rtadvd.gone
+	} | awk -v ra="$(cat /var/run/rtadvd.ra)" '
+	BEGIN { printf "qcomedma0:\\\n\t:%s", ra }
+	{
+		split($1, p, "/")
+		printf "addr%d=\"%s\":prefixlen%d#%d:", n, p[1], n, p[2]
+		if ($2 == "gone")
+			printf "pltime%d#0:vltime%d#0:", n, n
+		n++
+	}
+	END { print "" }'
+}
+
+if [ -f /var/run/rtadvd.ra ]; then
+	_now=$(_rtadvd_prefixes)
+	_was=$(cat /var/run/rtadvd.prefixes 2>/dev/null)
+	if [ "$_now" != "$_was" ]; then
+		# gone: the ones gone before and the ones gone now, minus
+		# any that came back (NetBSD's awk takes no newline in -v)
+		{ cat /var/run/rtadvd.gone 2>/dev/null; echo "$_was"; } |
+		    _NOW=$_now awk '
+		    BEGIN { n = split(ENVIRON["_NOW"], a, "\n"); for (i = 1; i <= n; i++) c[a[i]] }
+		    /\// && !($0 in c) && !s[$0]++' |
+		    tail -n 8 > /var/run/rtadvd.gone.new
+		mv /var/run/rtadvd.gone.new /var/run/rtadvd.gone
+		echo "$_now" > /var/run/rtadvd.prefixes
+		_rtadvd_conf > /var/run/rtadvd.conf
+		# rtadvd reads it again inside its chroot
+		cp /var/run/rtadvd.conf /var/chroot/rtadvd/var/run/
+		pkill -HUP -x rtadvd || :	# none yet: /etc/rc starts it later
+	fi
 fi

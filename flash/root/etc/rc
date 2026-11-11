@@ -117,22 +117,22 @@ sysctl -qw net.inet.ip.forwarding=1
 
 # IPv6 on the LAN: router advertisements (rtadvd) of the prefixes on
 # qcomedma0, LAN_ADDR6's and the one the provider delegates.  The second
-# comes later, when dhcpcd gets it: /etc/dhcpcd.exit-hook then makes
-# rtadvd read the addresses again (SIGHUP).  rtadvd reads its
-# configuration again too, after it has chrooted to /var/chroot/rtadvd:
-# the file has to be there as well.  Without IPv6 on the WAN the router
+# comes later, when dhcpcd gets it.  /etc/dhcpcd.exit-hook writes
+# rtadvd.conf with the prefixes, here and whenever they change, and then
+# makes rtadvd read it again (SIGHUP).  Without IPv6 on the WAN the router
 # does not announce itself as the default router (rltime 0).  With
 # DNS=yes, it announces itself as DNS server (RDNSS) at LAN_ADDR6.
 if [ -n "${LAN_ADDR6:-}" ] || [ $wan6 = yes ]; then
 	[ -n "${LAN_ADDR6:-}" ] && ifconfig qcomedma0 inet6 "$LAN_ADDR6" alias
 	sysctl -qw net.inet6.ip6.forwarding=1
 	ra=
-	[ $wan6 = yes ] || ra=":rltime#0"
+	[ $wan6 = yes ] || ra="rltime#0:"
 	[ "${DNS:-no}" = yes ] && [ -n "${LAN_ADDR6:-}" ] &&
-	    ra="$ra:rdnss=\"${LAN_ADDR6%/*}\""
-	printf 'qcomedma0:\\\n\t%s:\n' "${ra:-:}" > /var/run/rtadvd.conf
+	    ra="${ra}rdnss=\"${LAN_ADDR6%/*}\":"
+	echo "$ra" > /var/run/rtadvd.ra
 	mkdir -p /var/chroot/rtadvd/var/run
-	cp /var/run/rtadvd.conf /var/chroot/rtadvd/var/run/
+	echo none > /var/run/rtadvd.prefixes	# the hook: write it now
+	. /etc/dhcpcd.exit-hook
 	rtadvd -c /var/run/rtadvd.conf qcomedma0
 fi
 

@@ -193,12 +193,16 @@ makes `/dev/ubivolN`.
   and `LAN_ADDR6`'s. With `DNS=yes` and `LAN_ADDR6` set, it announces the router as DNS
   server (RDNSS). Without IPv6 on the WAN the router does not announce itself as a
   default router (router lifetime 0), and the clients keep their IPv6 internet traffic
-  elsewhere. The delegated prefix arrives seconds after `rtadvd` has started. The
-  routing socket tells `rtadvd` about the new address, but on this system it does not add
-  the prefix (see Pitfalls). So `/etc/dhcpcd.exit-hook`, which dhcpcd runs after each
-  event, compares the LAN's prefixes with the last ones it saw and sends `rtadvd` a
-  `SIGHUP`. `rtadvd` then reads its configuration and the interface's addresses again,
-  announcing the old set a few times with router lifetime 0 first.
+  elsewhere. The delegated prefix arrives seconds after `rtadvd` has started, and may
+  change later; `rtadvd` does not follow such changes by itself (see Pitfalls). So
+  `/etc/dhcpcd.exit-hook`, which dhcpcd runs after each event (and `/etc/rc` once before
+  it starts `rtadvd`), compares the LAN's prefixes with the last ones it saw. On a change
+  it writes `rtadvd.conf` with the prefixes listed (`addr0`, `prefixlen0`, ...) and sends
+  `rtadvd` a `SIGHUP`. `rtadvd` then announces the old set a few times with router
+  lifetime 0, and the new one. A prefix that went away stays in the list, the last eight
+  of them, announced with lifetimes 0: the hosts deprecate their addresses in it at once,
+  and drop them within 2 hours (RFC 4862 does not let an advertisement cut a valid
+  lifetime below 2 hours).
 - **PPPoE**: `pppoe0` over `vlan2`, configured with `pppoectl`. Tested against FreeBSD's
   `pppoed` (session, CHAP, address from IPCP); NAT over it not yet end to end.
 - **Time** (`NTP=yes`): `ntpd` with NetBSD's pool servers (`/etc/ntp.conf`), started
@@ -227,17 +231,22 @@ makes `/dev/ubivolN`.
 - **`rtadvd` does not pick up a prefix added after it started.** The kernel sends the
   `RTM_ADD` of the new interface route (`route monitor` shows it, with a link-level
   gateway and a netmask, as `rtadvd`'s filter wants), and `rtadvd -d -d -D` logs that it
-  received it, but its prefix list does not change. Why is still open. The work-around is
-  the dhcpcd hook above.
+  received it, but its prefix list does not change. Why is still open. It would not help
+  much anyway: `add_prefix()` in `config.c` announces a prefix found this way without the
+  autonomous flag, so the hosts would not make addresses in it. Hence the dhcpcd hook
+  above, which lists the prefixes in the configuration.
 - **`rtadvd` reads its configuration again inside its chroot.** On `SIGHUP` it opens
   the file given with `-c` after it has chrooted to `/var/chroot/rtadvd`. Without a copy
   there, it falls back to the defaults and drops `rltime#0` and `rdnss`. `/etc/rc`
   puts a copy at `/var/chroot/rtadvd/var/run/rtadvd.conf`.
-- **A changed prefix is not withdrawn on the LAN.** When the provider delegates a new
-  prefix, `rtadvd` stops announcing the old one, but it does not announce it with
-  lifetime 0. Hosts keep their old addresses, as deprecated only after `rtadvd`'s
-  default preferred lifetime of 7 days. They prefer addresses from the newest prefix,
-  but connections from the old one fail.
+- **A changed prefix has to be withdrawn.** Left out of the announcements, the old
+  prefix stays usable on the hosts for `rtadvd`'s default preferred lifetime, 7 days,
+  and connections from their addresses in it fail. The hook announces it with lifetimes
+  0 instead. It remembers gone prefixes only until the router reboots; with `duid ll`
+  the provider normally delegates the same prefix again after a reboot.
+- **NetBSD's `awk` takes no newline in `-v var=value`** ("newline in string"); GNU awk
+  does, so the hook passed a test on the PC and failed on the router. It passes the
+  list in the environment (`ENVIRON`).
 - **dhcpcd's hooks.** Without `/libexec/dhcpcd-run-hooks` and its
   `dhcpcd-hooks/20-resolv.conf`, dhcpcd never writes the provider's DNS servers into
   `/etc/resolv.conf` (it logs "No such file or directory" for the script). With
