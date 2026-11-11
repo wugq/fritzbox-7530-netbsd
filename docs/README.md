@@ -15,7 +15,8 @@ on the router (NetBSD or OpenWrt), `(FRITZ7530) #` at the U-Boot prompt.
    - the release images; the TFTP server; trying NetBSD from RAM; removing AVM's system
      and installing into the flash; next to OpenWrt
 3. [Configuring the Router](03-configuring-the-router.md)
-   - ssh; a home router behind a modem; keeping settings; `router.conf`; LEDs, buttons, logs
+   - ssh; a home router behind a modem; keeping settings; `router.conf`; LEDs, buttons,
+     logs; working from the command line: routes, VLANs, the firewall, DHCP, problems
 4. [Updating and Recovery](04-updating-and-recovery.md)
    - updating over ssh (`sysupgrade`) and going back; updating from U-Boot; booting
      OpenWrt; a router that does not boot
