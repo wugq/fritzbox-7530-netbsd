@@ -185,7 +185,8 @@ for d, mode in (('/bin', 0o755), ('/sbin', 0o755), ('/lib', 0o755), ('/libexec',
     ('/root', 0o755), ('/root/.ssh', 0o700), ('/usr', 0o755), ('/var', 0o755),
     ('/var/run', 0o755), ('/var/log', 0o755), ('/var/db', 0o755),
     ('/var/chroot', 0o755), ('/var/chroot/sshd', 0o755),
-    ('/var/chroot/rtadvd', 0o755), ('/var/empty', 0o755)):
+    ('/var/chroot/rtadvd', 0o755), ('/var/chroot/tcpdump', 0o755),
+    ('/var/empty', 0o755)):
 	os.makedirs(stage_path(d), exist_ok=True)
 	if d not in entries:
 		entries[d] = f'.{d} type=dir mode={mode:04o} uid=0 gid=0'
