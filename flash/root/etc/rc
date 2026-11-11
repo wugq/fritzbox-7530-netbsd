@@ -199,6 +199,11 @@ syslogd -s
 [ "$NTP" = yes ] && ntpd -g -c /etc/ntp.conf
 powerd	# buttons: /etc/powerd/scripts/hotkey_button
 
+# the owner's own commands (static routes, more VLANs, ...), kept by
+# saveconfig.  Run by its own shell: it cannot change this script's
+# variables or end it.
+[ -f /etc/rc.local ] && sh /etc/rc.local
+
 sysctl -qw hw.led.info_red=0 hw.led.info_green=1
 echo "flash edition: up ($(uname -v | cut -d: -f1))"
 exit 0

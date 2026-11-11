@@ -1,0 +1,17 @@
+# /etc/rc.local -- your own commands, run by /etc/rc at the end of the
+# boot, after the network, the firewall and the services are up.  Try a
+# command at the shell first; when it does what you want, add it here and
+# run saveconfig: from the next boot on, it is part of the router's setup.
+# A command that fails prints its error on the console; the rest still runs.
+#
+# Examples (see chapter 3 of the docs):
+#
+# A static route to a network behind another router on the LAN:
+#	route add -net 10.20.0.0/16 192.168.77.254
+#
+# Port 4 on its own network, VLAN 10 (the switch table first, then the
+# router's interface on it):
+#	sysctl -w hw.qcomess0.vlans="1:1,2,5 2:3 10:4"
+#	ifconfig vlan10 create
+#	ifconfig vlan10 vlan 10 vlanif qcomedma0
+#	ifconfig vlan10 inet 192.168.10.1/24 up
