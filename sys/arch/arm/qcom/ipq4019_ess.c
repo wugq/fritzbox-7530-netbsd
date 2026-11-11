@@ -36,6 +36,8 @@
  * ar40xx(4) does (sys/dev/etherswitch/ar40xx), which it follows:
  *   - the ESS reset (it resets the switch and the EDMA engine), done
  *     without breaking the PSGMII link to the PHY chip;
+ *   - the PSGMII self-test: loop frames through every port, reset the
+ *     link again if one does not pass;
  *   - setting up the switch from scratch: CPU port, forwarding, VLAN
  *     lookup.  The EDMA driver attaches later and finds a clean engine;
  *   - polling the port link states (log messages, hw.qcomess0.ports);
@@ -43,8 +45,8 @@
  *   - hw.qcomess0.isolate: ports 1-5 talk only to the CPU (routing tests;
  *     from attach on with options QCOM_ESS_ISOLATE, see ess_attach);
  *   - the ports' MIB counters as evcnts ("vmstat -e | grep qcomess");
- * Not done (yet): the PSGMII self-test, per-port network
- * interfaces, a device-tree or ioctl interface for VLANs.
+ * Not done (yet): per-port network interfaces, a device-tree or ioctl
+ * interface for VLANs.
  */
 
 #include <sys/cdefs.h>
@@ -64,6 +66,8 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <sys/systm.h>
 
 #include <net/if_ether.h>
+
+#include <dev/mii/mii.h>
 
 #include <dev/fdt/fdtvar.h>
 
@@ -134,6 +138,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #define  LOOKUP_STATE		__BITS(18, 16)
 #define   STATE_FORWARD		4
 #define  LOOKUP_LEARN		__BIT(20)
+#define  LOOKUP_LOOPBACK		__BIT(21)	/* send frames back out */
 #define SW_PORT_FLOWCTRL_THRESH(p) (0x9b0 + (p) * 4)
 
 /* ESS side of the PSGMII link (the "psgmii_phy" register block) */
@@ -164,6 +169,32 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 /* the QCA8075 PHY answers for its PSGMII interface at MDIO address 5 */
 #define MALIBU_PSGMII_PHY	5
+
+/*
+ * PSGMII self-test (ar40xx_hw_psgmii.c).  The QCA8075's ports 0-4 (switch
+ * ports 1-5) are at MDIO addresses 0-4; with broadcast on, all of them also
+ * take writes to address 0x1f.  Registers as FreeBSD and Linux use them
+ * (from Qualcomm's SDK, not in a public data sheet):
+ */
+#define ESS_NPHYS		5
+#define MALIBU_BCAST		0x1f	/* all PHYs, writes only */
+#define MII_PHY_SPEC_STATUS	0x11
+#define  PHY_SPEC_LINK		__BIT(10)	/* link, real time */
+#define MII_PHY_SPEC_CTRL	0x10
+#define MALIBU_MMD		7	/* vendor MMD */
+#define MMD7_PKTGEN_CTRL	0x8020	/* 0xa000: start the generator */
+#define MMD7_PKTGEN_COUNT	0x8021	/* frames to send */
+#define MMD7_MDIO_BCAST		0x8028	/* 0x801f: take address 0x1f too */
+#define MMD7_PKTCHK_CTRL	0x8029	/* 3: count frames that come back */
+#define MMD7_RX_OK_HI		0x802a
+#define MMD7_RX_OK_LO		0x802b
+#define MMD7_RX_ERR		0x802c
+#define MMD7_TX_OK_HI		0x802d
+#define MMD7_TX_OK_LO		0x802e
+#define MMD7_TX_ERR		0x802f
+#define MMD7_PKTGEN_SIZE	0x8062	/* frame length: 0x5e0 = 1504 */
+#define PSGMII_TEST_PKTS	0x1000
+#define PSGMII_TEST_TRIES	20	/* FreeBSD: 100 */
 
 /*
  * Per-port MIB counters (ar40xx_hw_mib.c).  32-bit counters, except the
@@ -224,6 +255,7 @@ struct ess_softc {
 #define PS_WR(sc, r, v)	bus_space_write_4((sc)->sc_bst, (sc)->sc_psgmiih, (r), (v))
 
 static int	ess_match(device_t, cfdata_t, void *);
+static void	ess_atu_flush(struct ess_softc *, int);
 static void	ess_attach(device_t, device_t, void *);
 
 static const struct device_compatible_entry compat_data[] = {
@@ -283,6 +315,16 @@ ess_mmd_read(struct ess_softc *sc, u_int phy, u_int mmd, u_int reg)
 	ess_mdio_write(sc, phy, MII_MMD_DATA, reg);
 	ess_mdio_write(sc, phy, MII_MMD_CTRL, MMD_CTRL_DATA | mmd);
 	return ess_mdio_read(sc, phy, MII_MMD_DATA);
+}
+
+static void
+ess_mmd_write(struct ess_softc *sc, u_int phy, u_int mmd, u_int reg,
+    uint16_t val)
+{
+	ess_mdio_write(sc, phy, MII_MMD_CTRL, mmd);
+	ess_mdio_write(sc, phy, MII_MMD_DATA, reg);
+	ess_mdio_write(sc, phy, MII_MMD_CTRL, MMD_CTRL_DATA | mmd);
+	ess_mdio_write(sc, phy, MII_MMD_DATA, val);
 }
 
 /* --- ESS reset ------------------------------------------------------ */
@@ -360,6 +402,138 @@ ess_reset(struct ess_softc *sc, struct fdtbus_reset *rst)
 	    cal < 0 ? "TIMEOUT" : "done");
 	aprint_verbose_dev(sc->sc_dev, "PSGMII: PLL after %d ms, "
 	    "calibration after %d ms\n", pll, cal);
+}
+
+/*
+ * PSGMII self-test.  The reset above makes a dead port rarer, not
+ * impossible: one boot in many still has a port whose PSGMII lane came
+ * back misaligned (link up, no frames; seen on the WAN port on 11-10).
+ * So test the link, as FreeBSD's ar40xx_hw_psgmii_self_test() and Linux's
+ * ar40xx do, and reset it again until it passes:
+ *
+ *	PHY packet generator --PSGMII--> switch port (loopback) --PSGMII--+
+ *	PHY packet checker   <-------------------------------------------+
+ *
+ * Each PHY is put in loopback at its copper side (so no cable is needed
+ * and nothing goes out of the jack) and sends PSGMII_TEST_PKTS frames;
+ * the switch port sends them straight back.  The test passes when every
+ * PHY counted them all and no errors.  First each PHY alone, then all at
+ * once (that loads the link as traffic does).
+ *
+ * The test leaves the PHYs reset with auto-negotiation on, so the links
+ * come up again about 3 s later, as after power-on.
+ */
+
+/* Run the generator on phy (or MALIBU_BCAST: all); bitmap of failed PHYs. */
+static uint32_t
+ess_psgmii_test_run(struct ess_softc *sc, u_int phy)
+{
+	const bool all = phy == MALIBU_BCAST;
+	uint32_t failed = 0;
+
+	ess_mdio_write(sc, phy, MII_BMCR, BMCR_RESET | BMCR_AUTOEN);
+	ess_mdio_write(sc, phy, MII_BMCR, BMCR_LOOP | BMCR_S1000 | BMCR_FDX);
+	/* wait for the loopback link: 100 x 8 ms at most, as FreeBSD */
+	for (u_int i = 0; i < 100; i++) {
+		u_int p, n = all ? ESS_NPHYS : 1;
+
+		for (p = 0; p < n; p++) {
+			const int st = ess_mdio_read(sc, all ? p : phy,
+			    MII_PHY_SPEC_STATUS);
+			if (st < 0 || (st & PHY_SPEC_LINK) == 0)
+				break;
+		}
+		if (p == n)
+			break;
+		delay(8000);
+	}
+
+	ess_mmd_write(sc, phy, MALIBU_MMD, MMD7_PKTCHK_CTRL, 0);
+	ess_mmd_write(sc, phy, MALIBU_MMD, MMD7_PKTCHK_CTRL, 3);
+	ess_mmd_write(sc, phy, MALIBU_MMD, MMD7_PKTGEN_CTRL, 0xa000);
+	/* 4096 frames x 1524 bytes x 8 ns (125 MHz) = 50 ms */
+	delay(60000);
+
+	for (u_int p = 0; p < ESS_NPHYS; p++) {
+		if (!all && p != phy)
+			continue;
+		const uint32_t tx = ess_mmd_read(sc, p, MALIBU_MMD,
+		    MMD7_TX_OK_LO) | ess_mmd_read(sc, p, MALIBU_MMD,
+		    MMD7_TX_OK_HI) << 16;
+		const uint32_t txerr = ess_mmd_read(sc, p, MALIBU_MMD,
+		    MMD7_TX_ERR);
+		if (tx == PSGMII_TEST_PKTS && txerr == 0)
+			continue;
+		failed |= __BIT(p);
+		const uint32_t rx = ess_mmd_read(sc, p, MALIBU_MMD,
+		    MMD7_RX_OK_LO) | ess_mmd_read(sc, p, MALIBU_MMD,
+		    MMD7_RX_OK_HI) << 16;
+		aprint_normal_dev(sc->sc_dev, "PSGMII test (%s): port %u: "
+		    "tx %u, %u errors; rx %u, %u errors\n", all ? "all" : "one",
+		    p + 1, tx, txerr, rx,
+		    ess_mmd_read(sc, p, MALIBU_MMD, MMD7_RX_ERR));
+	}
+	if (!all)	/* FreeBSD powers each one down again */
+		ess_mdio_write(sc, phy, MII_BMCR, BMCR_AUTOEN | BMCR_PDOWN |
+		    BMCR_S1000);
+	return failed;
+}
+
+static void
+ess_psgmii_selftest(struct ess_softc *sc, struct fdtbus_reset *rst)
+{
+	uint32_t failed = 0;
+	u_int try;
+
+	if (!sc->sc_mdio_ok)
+		return;
+	/* PHY 4 is a combo port: its MII registers are the copper side's */
+	ess_mdio_write(sc, 4, 0x1f, 0x8500);
+	for (u_int p = 0; p < ESS_NPHYS; p++)
+		ess_mmd_write(sc, p, MALIBU_MMD, MMD7_MDIO_BCAST, 0x801f);
+	ess_mdio_write(sc, MALIBU_BCAST, MII_BMCR, BMCR_AUTOEN | BMCR_PDOWN |
+	    BMCR_S1000);
+	ess_mmd_write(sc, MALIBU_BCAST, MALIBU_MMD, MMD7_PKTGEN_COUNT,
+	    PSGMII_TEST_PKTS);
+	ess_mmd_write(sc, MALIBU_BCAST, MALIBU_MMD, MMD7_PKTGEN_SIZE, 0x05e0);
+	ess_mdio_write(sc, MALIBU_BCAST, MII_PHY_SPEC_CTRL, 0x6800); /* fix MDI */
+
+	for (try = 0; try < PSGMII_TEST_TRIES; try++) {
+		for (u_int p = 1; p <= ESS_NPHYS; p++)
+			SW_WR(sc, SW_PORT_LOOKUP(p),
+			    SW_RD(sc, SW_PORT_LOOKUP(p)) | LOOKUP_LOOPBACK);
+		failed = 0;
+		for (u_int p = 0; p < ESS_NPHYS; p++)
+			failed |= ess_psgmii_test_run(sc, p);
+		failed |= ess_psgmii_test_run(sc, MALIBU_BCAST);
+		if (failed == 0)
+			break;
+		ess_reset(sc, rst);
+	}
+
+	/* back to normal: generator off, loopbacks off, PHYs reset with AN */
+	ess_mmd_write(sc, MALIBU_BCAST, MALIBU_MMD, MMD7_PKTGEN_COUNT, 0);
+	ess_mmd_write(sc, MALIBU_BCAST, MALIBU_MMD, MMD7_PKTCHK_CTRL, 0);
+	ess_mmd_write(sc, MALIBU_BCAST, MALIBU_MMD, MMD7_PKTGEN_CTRL, 0);
+	ess_mdio_write(sc, MALIBU_BCAST, MII_PHY_SPEC_CTRL, 0x6860);
+	ess_mdio_write(sc, MALIBU_BCAST, MII_BMCR, BMCR_RESET | BMCR_AUTOEN |
+	    BMCR_S1000);
+	for (u_int p = 1; p <= ESS_NPHYS; p++)
+		SW_WR(sc, SW_PORT_LOOKUP(p),
+		    SW_RD(sc, SW_PORT_LOOKUP(p)) & ~LOOKUP_LOOPBACK);
+	for (u_int p = 0; p < ESS_NPHYS; p++)
+		ess_mmd_write(sc, p, MALIBU_MMD, MMD7_MDIO_BCAST, 0x001f);
+	ess_atu_flush(sc, -1);	/* forget the test frames' address */
+
+	if (failed)
+		aprint_error_dev(sc->sc_dev, "PSGMII self-test: still failing "
+		    "after %u resets (ports %#x), a port may stay dead\n",
+		    try, failed << 1);
+	else if (try > 0)
+		aprint_normal_dev(sc->sc_dev, "PSGMII self-test: passed after "
+		    "%u reset%s\n", try, try == 1 ? "" : "s");
+	else
+		aprint_normal_dev(sc->sc_dev, "PSGMII self-test: passed\n");
 }
 
 /* --- switch set-up -------------------------------------------------- */
@@ -454,7 +628,7 @@ ess_apply_vlans(struct ess_softc *sc)
 	ess_atu_flush(sc, -1);
 }
 
-/* After the ESS reset: as FreeBSD's ar40xx_attach(), minus the self-test */
+/* After the reset and the self-test: as FreeBSD's ar40xx_attach() */
 static void
 ess_init(struct ess_softc *sc)
 {
@@ -777,6 +951,7 @@ ess_attach(device_t parent, device_t self, void *aux)
 	bus_space_read_region_4(sc->sc_bst, sc->sc_swh, 0, save,
 	    ESS_SAVE_SIZE / 4);
 	ess_reset(sc, rst);
+	ess_psgmii_selftest(sc, rst);
 	fdtbus_reset_put(rst);
 #ifdef QCOM_ESS_ISOLATE
 	/*

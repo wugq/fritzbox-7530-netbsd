@@ -75,6 +75,12 @@ log "testing kernel $KVER (repo $COMMIT)"
 BOOTLOG=$R/last-boot.log	# written by nb-cycle.sh for this boot
 grep -aq "ESS calibration done" "$BOOTLOG" &&
 	check "PSGMII calibration" "done" ok || check "PSGMII calibration" "missing/timeout" fail
+st=$(grep -aoE "PSGMII self-test: [a-z].*" "$BOOTLOG" | tail -1 | tr -d '\r')
+case $st in
+*"passed"*)	check "PSGMII self-test" "${st#PSGMII self-test: }" ok ;;
+"")		ROWS+=("| PSGMII self-test | not in this kernel | - |") ;;
+*)		check "PSGMII self-test" "${st#PSGMII self-test: }" fail ;;
+esac
 grep -aqE "sd0 at scsibus" "$BOOTLOG" &&
 	check "USB stick" "sd0" ok || check "USB stick" "no sd0" fail
 n=$(grep -ac "cpufreqdt.: couldn't acquire clock" "$BOOTLOG")

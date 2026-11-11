@@ -228,7 +228,7 @@ QUICK=1 tools/hwtest.sh            # skip throughput
 ITB=netbsd-usb-FRITZ7530.itb tools/hwtest.sh
 ```
 
-Checks: boot, PSGMII calibration, USB stick, both switch ports up, ping both ways,
+Checks: boot, PSGMII calibration and self-test, USB stick, both switch ports up, ping both ways,
 console input, 100 MB of random data through the router and back (sha256), the WAN port
 (isolation, `vlan2`, full-size frames), back to the default set-up, console after load;
 throughput: six iperf3 runs in the default mode and six through the VLAN WAN port. The

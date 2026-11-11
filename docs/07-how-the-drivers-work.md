@@ -412,6 +412,44 @@ As FreeBSD's `ar40xx_hw_malibu_psgmii_ess_reset()`. MDIO, the CPU's bus to the P
 registers, is a few functions here (`ess_mdio_read/write`, and `ess_mmd_read` for MMD
 registers through clause-22 registers 13/14).
 
+### PSGMII self-test
+
+The reset above made a dead port rare, not impossible: on 11-10 the WAN port passed no
+frames for a whole boot. So after the reset the driver tests the link, as FreeBSD's
+`ar40xx_hw_psgmii_self_test()` and OpenWrt's `ar40xx` do. The QCA8075 has a packet
+generator and a packet checker in each PHY:
+
+```
+PHY packet generator --PSGMII--> switch port, in loopback --PSGMII--+
+PHY packet checker   <----------------------------------------------+
+```
+
+Each PHY is put in loopback on its copper side (no cable needed, nothing goes out of the
+jack) and sends 4096 frames of 1504 bytes; the switch port, with the `LOOPBACK` bit of
+`PORT_LOOKUP` set, sends them straight back. First each PHY alone, then all five at once.
+If a PHY did not count them all, the driver resets the PSGMII link again (the five steps
+above) and tests again, up to 20 times. The registers (vendor MMD 7, 0x8020-0x8062) are
+not in a public data sheet; FreeBSD and Linux have them from Qualcomm's SDK.
+
+dmesg says `qcomess0: PSGMII self-test: passed`, or, when it caught a bad lane:
+
+```
+qcomess0: PSGMII test (one): port 4: tx 0, 0 errors; rx 4096, 0 errors
+qcomess0: PSGMII test (all): port 4: tx 0, 0 errors; rx 4096, 0 errors
+qcomess0: PSGMII self-test: passed after 1 reset
+```
+
+That is one direction of port 4's lane passing nothing: without the test, the PC on
+port 4 could not have reached the router until the next reboot. In 20 boots in a row
+the test caught a bad lane twice: once port 4 (passed after one reset), once ports 4
+and 5 (port 5 still bad after the first reset, passed after the second); LAN and WAN
+worked after every boot. So the coordinated reset alone still leaves about one boot in
+ten with a dead port, and one reset is not always enough.
+
+A round is six runs of about 60 ms, plus the wait for the loopback links. Afterwards
+the PHYs are reset with auto-negotiation on, so the links come up about 3 s after
+attach, as after power-on.
+
 ### Setting the switch up from scratch
 
 The first version saved U-Boot's switch registers before the reset and wrote them back.
@@ -429,7 +467,7 @@ Now the driver programs them, as `ar40xx_attach()`:
 | CPU port 0 | `PORT_STATUS(0)` | fixed 1000/full with flow control, then MAC on |
 
 Not taken from FreeBSD: jumbo frames (EDMA's receive buffers are 2 KB); the max frame is
-1522 (room for a VLAN tag). Not done: the PSGMII self-test (the reset above was enough).
+1522 (room for a VLAN tag).
 With `boot -v` the driver lists the registers that differ from U-Boot's, for comparison.
 
 ### Link state
