@@ -26,7 +26,9 @@ HOST=${HOST:-root@192.168.77.1}
 SSH="ssh -i $HOME/.ssh/fritz7530-lab -o IdentitiesOnly=yes -o BatchMode=yes
     -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 TD=$R/tooldir/bin
-SETS_URL=${SETS_URL:-https://cdn.netbsd.org/pub/NetBSD/NetBSD-11.1/evbarm-earmv7hf/binary/sets}
+SETS_PATH=pub/NetBSD/NetBSD-11.1/evbarm-earmv7hf/binary/sets
+SETS_URL=${SETS_URL:-https://cdn.netbsd.org/$SETS_PATH}
+SETS_MASTER=https://ftp.netbsd.org/$SETS_PATH
 ELF=obj/sys/arch/evbarm/compile/FRITZ7530_FLASH/netbsd
 [ -f "$ELF" ] || { echo "no $ELF: KERNEL=FRITZ7530_FLASH tools/build.sh first" >&2; exit 1; }
 
@@ -36,8 +38,19 @@ elif [ "${SETS:-0}" = 1 ]; then
 	# from NetBSD's official binary sets: no router needed (the CI way)
 	S=dl/sets
 	mkdir -p $S
+	# The CDN can stall (503 "first byte timeout", or a few KB/s until
+	# it drops the transfer): retry, give up on a transfer slower than
+	# 50 KB/s for a minute, then try the master site.  A file is kept
+	# only when complete, so a failed run does not leave half of one.
 	for f in base.tgz etc.tgz SHA512; do
-		[ -f $S/$f ] || curl -sfL -o $S/$f "$SETS_URL/$f"
+		[ -f $S/$f ] && continue
+		for u in "$SETS_URL" "$SETS_MASTER"; do
+			curl -sfL --retry 3 --retry-all-errors --speed-limit 50000 \
+			    --speed-time 60 -o $S/$f.part "$u/$f" &&
+			    mv $S/$f.part $S/$f && break
+			echo "$u/$f: download failed" >&2
+		done
+		[ -f $S/$f ] || { rm -f "dl/sets/$f.part"; exit 1; }
 	done
 	for f in base.tgz etc.tgz; do
 		want=$(grep "($f)" $S/SHA512 | awk '{print $4}')

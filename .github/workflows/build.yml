@@ -43,6 +43,15 @@ jobs:
           path: tooldir
           key: tooldir-${{ env.NETBSD_COMMIT }}-v1
 
+      # The release's binary sets never change: download them once, so a
+      # build does not depend on the NetBSD CDN being up (mkflash.sh still
+      # checks them against SHA512).
+      - name: Cache the NetBSD 11.1 sets
+        uses: actions/cache@v6
+        with:
+          path: dl/sets
+          key: sets-11.1-evbarm-earmv7hf-v1
+
       - name: FRITZ7530 kernel (TFTP / USB root)
         run: KERNEL=FRITZ7530 tools/build.sh
 
